@@ -1,0 +1,251 @@
+/* ═══════════════════════════════════════════════════════════════════
+   AL-SYUKROSMART OPS — app.css
+   Dibangun di atas Bootstrap 5 (lihat <link> bootstrap di <head>).
+   Semua nama class LAMA dipertahankan (sidebar, card, btn, dtable, fld,
+   modal-overlay, dst.) agar js/main.js dan seluruh alur/interaksi di
+   setiap halaman modul TIDAK berubah sedikit pun — hanya tampilan yang
+   kini memakai token warna, radius, shadow & komponen Bootstrap.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Override variabel Bootstrap dengan palet institusi ── */
+:root{
+  --bs-primary:#145c3f; --bs-primary-rgb:20,92,63;
+  --bs-secondary:#a97c22; --bs-secondary-rgb:169,124,34;
+  --bs-success:#145c3f; --bs-success-rgb:20,92,63;
+  --bs-warning:#a97c22; --bs-warning-rgb:169,124,34;
+  --bs-danger:#b3392b; --bs-danger-rgb:179,57,43;
+  --bs-info:#2f6690; --bs-info-rgb:47,102,144;
+  --bs-body-bg:#f6f4ee; --bs-body-color:#1c2a22;
+  --bs-border-color:#e6e1d3;
+  --bs-border-radius:.6rem; --bs-border-radius-lg:1.1rem; --bs-border-radius-sm:.45rem;
+  --bs-box-shadow:0 8px 24px rgba(20,30,23,.08);
+  --bs-box-shadow-sm:0 1px 2px rgba(20,30,23,.06);
+  --bs-font-sans-serif:'Inter',ui-sans-serif,system-ui,sans-serif;
+  --bs-link-color:#145c3f; --bs-link-hover-color:#0c3f2b;
+
+  /* alias lama (dipakai sebagai inline style di beberapa halaman) tetap tersedia */
+  --primary:#145c3f; --primary-dark:#0c3f2b; --primary-tint:#e7f1ec;
+  --gold:#a97c22; --gold-tint:#f6ecd6;
+  --bg:#f6f4ee; --card:#fffefb; --text:#1c2a22; --muted:#6f7669; --border:#e6e1d3;
+  --danger:#b3392b; --danger-tint:#f8e6e2; --warning:#a97c22; --warning-tint:#f6ecd6;
+  --info:#2f6690; --info-tint:#e5eef3;
+  --radius:.6rem; --radius-lg:1.1rem;
+  --shadow-sm:var(--bs-box-shadow-sm); --shadow-md:var(--bs-box-shadow);
+  --font-display:'Fraunces',ui-serif,Georgia,serif; --font-body:'Inter',ui-sans-serif,sans-serif;
+}
+html,body{background:var(--bs-body-bg);font-size:14px;-webkit-font-smoothing:antialiased}
+a{text-decoration:none}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#d8d3c2;border-radius:8px}
+
+/* Bootstrap button/badge re-theme (memakai token di atas secara otomatis via --bs-btn-*) */
+.btn{--bs-btn-border-radius:var(--bs-border-radius);font-weight:600;font-size:13px}
+.btn-primary{--bs-btn-bg:var(--primary);--bs-btn-border-color:var(--primary);--bs-btn-hover-bg:var(--primary-dark);--bs-btn-hover-border-color:var(--primary-dark);--bs-btn-active-bg:var(--primary-dark);}
+.btn-danger{--bs-btn-bg:var(--danger-tint);--bs-btn-color:var(--danger);--bs-btn-border-color:var(--danger-tint);--bs-btn-hover-bg:#f1cec8;--bs-btn-hover-color:var(--danger);--bs-btn-hover-border-color:#f1cec8;}
+.btn-outline{background:var(--card);border:1px solid var(--border);color:var(--text)}
+.btn-outline:hover{background:var(--primary-tint);border-color:var(--primary);color:var(--text)}
+.btn-sm{padding:6px 11px;font-size:12px}
+.btn-icon{width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:.5rem}
+.btn svg{width:15px;height:15px}
+.actions-cell{display:flex;gap:6px;flex-wrap:wrap}
+.export-toolbar .btn svg{width:14px;height:14px}
+
+.badge{font-weight:700;letter-spacing:.1px;border-radius:20px}
+.b-gray{background:#eeece4;color:#5c6157}
+.b-yellow{background:var(--gold-tint);color:#8a5f14}
+.b-blue{background:var(--info-tint);color:#245277}
+.b-green{background:var(--primary-tint);color:var(--primary-dark)}
+.b-red{background:var(--danger-tint);color:#8f2c20}
+.b-purple{background:#ece6f4;color:#5f3d95}
+.b-teal{background:#ccfbf1;color:#000000}
+
+/* ── 2. Layout shell ── */
+.app-shell{display:flex;min-height:100vh}
+.sidebar{
+  width:266px;flex-shrink:0;color:#eef3ee;display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;height:-webkit-fill-available;height:100dvh;
+  background:radial-gradient(120% 60% at 100% 0%, rgba(255,255,255,.05) 0%, transparent 55%),
+             linear-gradient(190deg,#0c3f2b 0%, #0a2e21 78%);
+}
+.sidebar-brand{display:flex;align-items:center;gap:12px;padding:22px 18px 18px}
+.sidebar-brand .logo-badge{background:#fffefb;border-radius:.7rem;padding:7px;line-height:0;box-shadow:var(--bs-box-shadow-sm);flex-shrink:0}
+.sidebar-brand .logo-badge img{height:34px;width:auto;display:block}
+.brand-text strong{display:block;font-family:var(--font-display);font-size:15px;font-weight:600;letter-spacing:.2px;line-height:1.15}
+.brand-text span{font-size:10.5px;color:#a9c2b3;letter-spacing:1px}
+.sidebar-nav{flex:1;overflow-y:auto;padding:8px 12px}
+.nav-item{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:.55rem;color:#c3d5c9;font-size:13.5px;font-weight:500;margin-bottom:2px;border-left:2.5px solid transparent;transition:background .15s,color .15s}
+.nav-item svg{width:17px;height:17px;flex-shrink:0;opacity:.85}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:rgba(255,255,255,.09);color:#fff;border-left-color:var(--gold)}
+.nav-item.active svg{opacity:1;color:var(--gold)}
+.sidebar-footer{padding:14px 16px 24px;border-top:1px solid rgba(255,255,255,.08);padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+.user-chip{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0;font-family:var(--font-display);box-shadow:0 0 0 2px rgba(255,255,255,.12)}
+.user-info{overflow:hidden}
+.user-info strong{display:block;font-size:13px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.user-info span{font-size:11px;color:#9db6a7}
+.logout-btn{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#9db6a7;padding:7px 2px}
+.logout-btn:hover{color:#fff}
+.logout-btn svg{width:15px;height:15px}
+
+.app-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:18px 30px;background:var(--card);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+.topbar-title h1{font-family:var(--font-display);font-size:22px;font-weight:600;letter-spacing:.1px}
+.topbar-title p{font-size:12.5px;color:var(--muted);margin-top:3px}
+.topbar-actions{display:flex;align-items:center;gap:14px;position:relative}
+.icon-btn{position:relative;width:38px;height:38px;border-radius:.6rem;border:1px solid var(--border);background:var(--card);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s}
+.icon-btn:hover{border-color:var(--primary)}
+.icon-btn svg{width:18px;height:18px;color:var(--muted)}
+.notif-dot{position:absolute;top:7px;right:7px;width:8px;height:8px;border-radius:50%;background:var(--danger);box-shadow:0 0 0 2px var(--card)}
+.badge-role{padding:6px 13px;border-radius:20px;font-size:11.5px;font-weight:700;letter-spacing:.2px}
+.notif-panel{position:absolute;right:0;top:52px;width:340px;max-height:420px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:50}
+.notif-item{padding:12px 16px;border-bottom:1px solid var(--border);font-size:12.5px}
+.notif-item:last-child{border-bottom:none}
+.notif-item b{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.notif-item span{color:var(--muted);font-size:11px}
+.app-content{flex:1;padding:26px 30px}
+
+/* ── 3. Stat cards ── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin-bottom:22px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:19px;transition:box-shadow .15s,transform .15s}
+a.stat-card:hover{box-shadow:var(--shadow-md);transform:translateY(-1px)}
+.stat-card .stat-icon{width:38px;height:38px;border-radius:.6rem;display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+.stat-card .stat-icon svg{width:19px;height:19px;color:#fff}
+.stat-card h3{font-family:var(--font-display);font-size:27px;font-weight:600}
+.stat-card p{font-size:12px;color:var(--muted);margin-top:3px}
+
+/* ── 4. Card (dipetakan ke look Bootstrap .card) ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px;margin-bottom:20px;box-shadow:var(--bs-box-shadow-sm)}
+.card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:17px;flex-wrap:wrap;gap:10px}
+.card-head h2{font-family:var(--font-display);font-size:17px;font-weight:600}
+.card-head p{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* ── 5. Tabs (nav-pills style ala Bootstrap) ── */
+.tabs{display:flex;gap:4px;margin-bottom:18px;flex-wrap:wrap;border-bottom:1px solid var(--border)}
+.tab-btn{padding:10px 16px;font-size:13px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;background:none;border-top:none;border-left:none;border-right:none;font-family:inherit;margin-bottom:-1px}
+.tab-btn.active{color:var(--primary);border-bottom-color:var(--gold)}
+
+/* ── 6. Table — memanfaatkan komponen .table bawaan Bootstrap ── */
+.table-wrap{overflow-x:auto}
+table.dtable{font-size:13px;--bs-table-bg:transparent}
+table.dtable thead th{background:var(--primary-tint);color:var(--primary-dark);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap;border-bottom-width:1px}
+table.dtable th:first-child{border-top-left-radius:.5rem}
+table.dtable th:last-child{border-top-right-radius:.5rem}
+.empty-row{text-align:center;color:var(--muted);padding:34px !important}
+
+/* ── 7. Form (styled seperti Bootstrap .form-control / .form-select) ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-size:12.5px;font-weight:600;margin-bottom:6px;color:#3c463e}
+.fld input,.fld select,.fld textarea{
+  width:100%;padding:.5rem .8rem;border:1px solid var(--bs-border-color);border-radius:var(--bs-border-radius);
+  font-size:13.5px;font-family:inherit;background:#fbfaf6;color:var(--text);
+  transition:border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--primary);background:#fff;box-shadow:0 0 0 .2rem rgba(var(--bs-primary-rgb),.15)}
+.fld textarea{resize:vertical;min-height:80px}
+
+/* ── 8. Modal (mengikuti tampilan Bootstrap .modal-content) ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(12,20,15,.55);backdrop-filter:blur(1px);display:none;align-items:center;justify-content:center;z-index:1055;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{display:block !important;position:relative !important;height:auto !important;background:var(--card);border-radius:var(--bs-border-radius-lg);width:100% !important;max-width:560px;max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px rgba(10,20,15,.28);border:1px solid var(--border)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--border)}
+.modal-head h3{font-family:var(--font-display);font-size:17px;font-weight:600}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--muted)}
+.modal-body{padding:22px}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border)}
+
+/* ── 9. Toast ── */
+#toastContainer{position:fixed;top:20px;right:20px;z-index:1080;display:flex;flex-direction:column;gap:10px}
+.toast{background:var(--card);border-radius:var(--bs-border-radius);padding:13px 16px;box-shadow:var(--shadow-md);display:flex;align-items:center;gap:10px;min-width:280px;max-width:360px;cursor:pointer;font-size:13px;font-weight:500;border-left:4px solid var(--info);opacity:1}
+.toast-success{border-left-color:var(--primary)}
+.toast-error{border-left-color:var(--danger)}
+.toast-warning{border-left-color:var(--warning)}
+
+/* ── 10. Empty state, search bar, hierarchy tree ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty-state svg{width:42px;height:42px;margin-bottom:14px;color:#c9c3af}
+.empty-state h3{font-family:var(--font-display);font-size:17px;color:var(--text);margin-bottom:6px}
+.search-bar{display:flex;align-items:center;gap:8px;background:#fbfaf6;border:1px solid var(--border);border-radius:var(--bs-border-radius);padding:8px 12px;min-width:220px}
+.search-bar svg{width:15px;height:15px;color:var(--muted)}
+.search-bar input{border:none;background:none;outline:none;font-size:13px;flex:1;font-family:inherit}
+.hierarchy-tree{font-size:13px}
+.hierarchy-tree ul{list-style:none;margin-left:20px;padding-left:14px;border-left:1.5px dashed var(--border)}
+.hierarchy-tree li{margin:6px 0}
+.hierarchy-node{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;background:#fbfaf6;border:1px solid var(--border);border-radius:var(--bs-border-radius)}
+.hierarchy-node svg{width:14px;height:14px;color:var(--primary)}
+.hgroup{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+/* ── 11. Sidebar mobile (hamburger/offcanvas-style) ── */
+.hamburger-btn{display:none}
+.sidebar-close{display:none}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(10,18,14,.5);z-index:99}
+.sidebar-overlay.open{display:block}
+body.no-scroll{overflow:hidden}
+
+/* ═══════════════════════════════════════ RESPONSIVE ═══════════════════════════════════════ */
+@media(max-width:1024px){
+  .sidebar{width:230px}
+  .stat-grid{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+}
+@media(max-width:860px){
+  .sidebar{position:fixed;left:-280px;top:0;bottom:0;width:250px;z-index:100;transition:left .22s ease;box-shadow:0 0 40px rgba(0,0,0,.3);display:block;overflow-y:auto;padding-bottom:120px}
+  .sidebar-brand{padding:16px 14px 12px;gap:10px}
+  .sidebar-brand .logo-badge img{height:28px}
+  .brand-text strong{font-size:13px}
+  .brand-text span{font-size:9px}
+  .sidebar-nav{overflow-y:visible;display:block;padding:6px 10px}
+  .nav-item{padding:8px 10px;gap:10px;font-size:12.5px;margin-bottom:1px}
+  .nav-item svg{width:15px;height:15px}
+  .sidebar-footer{padding:16px 14px 20px !important;border-top:1px solid rgba(255,255,255,.08);margin-top:20px;display:block}
+  .user-chip{margin-bottom:8px;gap:8px}
+  .avatar{width:30px;height:30px;font-size:12px}
+  .user-info strong{font-size:12px}
+  .user-info span{font-size:10px}
+  .logout-btn{font-size:11.5px;padding:4px 2px}
+  .logout-btn svg{width:14px;height:14px}
+  .sidebar.open{left:0}
+  .sidebar-close{display:flex;align-items:center;justify-content:center;background:none;border:none;color:#c3d5c9;cursor:pointer;margin-left:auto;padding:4px}
+  .sidebar-close svg{width:20px;height:20px}
+  .hamburger-btn{display:flex}
+  .topbar-title{display:flex;align-items:center;gap:12px}
+  .app-content{padding:16px}
+  .topbar{padding:14px 16px}
+  .form-grid{grid-template-columns:1fr}
+}
+@media(max-width:600px){
+  .topbar-title h1{font-size:17px}
+  .topbar-title p{display:none}
+  .topbar-actions{gap:8px}
+  .badge-role{display:none}
+  .stat-grid{grid-template-columns:repeat(2,1fr);gap:10px}
+  .stat-card{padding:14px}
+  .stat-card h3{font-size:21px}
+  .card{padding:16px}
+  .card-head{align-items:flex-start}
+  .card-head h2{font-size:15.5px}
+  .hgroup{width:100%}
+  .hgroup .search-bar{flex:1 1 auto;min-width:0}
+  .search-bar{min-width:0;width:100%}
+  table.dtable{font-size:12px}
+  .modal{max-width:100%;width:100%;border-radius:14px 14px 0 0;position:fixed;left:0;right:0;bottom:0;max-height:85vh}
+  .modal-overlay{align-items:flex-end;padding:0}
+  .modal-overlay.open{display:flex}
+  .notif-panel{width:calc(100vw - 24px);right:-6px}
+  .dgrid{grid-template-columns:1fr 1fr}
+  .actions-cell{flex-wrap:wrap}
+  .btn{padding:9px 14px;font-size:12.5px}
+}
+@media(max-width:380px){
+  .stat-grid{grid-template-columns:1fr 1fr}
+  .logo-badge img{height:24px}
+}
+
+/* ═══════════════════════════════════════ CETAK (PRINT) ═══════════════════════════════════════ */
+@media print{
+  .sidebar,.topbar,.notif-panel,.no-print,.export-toolbar,.btn:not(.keep-print),
+  .modal-overlay,#toastContainer,.hgroup .btn,.search-bar,.tabs{ display:none !important; }
+  .app-content{ padding:0 !important; }
+  .card{ border:none !important; box-shadow:none !important; padding:0 !important; }
+  body{ background:#fff !important; }
+}
