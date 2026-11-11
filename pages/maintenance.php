@@ -1,7 +1,9 @@
 <?php
 $canAjukan = hasAccess($role, 'maintenance', 'ajukan');
 $canVerifikasi = hasAccess($role, 'maintenance', 'verifikasi');
+$canVerifikasiPengganti = hasAccess($role, 'maintenance', 'verifikasi_pengganti');
 $canApprove = hasAccess($role, 'maintenance', 'approve');
+$canApproveAkhirPengganti = hasAccess($role, 'maintenance', 'approve_akhir_pengganti');
 $canApproveAtasan = hasAccess($role, 'maintenance', 'approve_atasan');
 $canApprovePengganti = hasAccess($role, 'maintenance', 'approve_pengganti');
 $canKelola = hasAccess($role, 'maintenance', 'kelola');
@@ -153,10 +155,11 @@ $totalSelesai = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE
         <div class="modal-body">
             <input type="hidden" id="pgMaintId">
             <input type="hidden" id="pgMaintSetuju">
-            <p style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan maintenance ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.</p>
+            <input type="hidden" id="pgMaintAction" value="approve_atasan">
+            <p id="pgMaintDesc" style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan maintenance ini menggantikan pejabat yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke pejabat asli.</p>
             <div class="fld">
                 <label>Alasan Menggantikan <span style="color:var(--danger)">*</span> <small style="color:var(--muted);font-weight:400">(10–255 karakter)</small></label>
-                <textarea id="pgMaintAlasan" rows="3" maxlength="255" placeholder="Contoh: Atasan langsung sedang cuti sakit hari ini..."></textarea>
+                <textarea id="pgMaintAlasan" rows="3" maxlength="255" placeholder="Contoh: Petugas yang bersangkutan sedang izin / sakit hari ini..."></textarea>
             </div>
             <div class="fld" id="pgMaintCatatanWrap" style="display:none">
                 <label>Catatan Penolakan (Opsional)</label>
@@ -172,7 +175,9 @@ $totalSelesai = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE
 
 <script>
 const M_VERIFIKASI = <?= $canVerifikasi ? 'true' : 'false' ?>;
+const M_VERIFIKASI_PENGGANTI = <?= $canVerifikasiPengganti ? 'true' : 'false' ?>;
 const M_APPROVE = <?= $canApprove ? 'true' : 'false' ?>;
+const M_APPROVE_AKHIR_PENGGANTI = <?= $canApproveAkhirPengganti ? 'true' : 'false' ?>;
 const M_APPROVE_ATASAN = <?= $canApproveAtasan ? 'true' : 'false' ?>;
 const M_APPROVE_PENGGANTI = <?= $canApprovePengganti ? 'true' : 'false' ?>;
 const M_KELOLA = <?= $canKelola ? 'true' : 'false' ?>;
@@ -363,9 +368,11 @@ async function loadMaint() {
     if (document.getElementById('maintBody')) updateDOM('maintBody', r.data.length ? r.data.map(p => {
         let aksi = '';
         if (p.status === 'menunggu_approval_atasan' && M_APPROVE_ATASAN && p.can_approve_atasan) aksi = pairAtasan('approve_atasan', p.id);
-        else if (p.status === 'menunggu_approval_atasan' && M_APPROVE_PENGGANTI && p.can_approve_pengganti) aksi = pairPenggantiMaint(p.id);
-        else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && M_VERIFIKASI) aksi = pair('verifikasi', p.id, 'valid');
-        else if (p.status === 'diverifikasi' && M_APPROVE) aksi = pair('approve', p.id, 'setuju');
+        else if (p.status === 'menunggu_approval_atasan' && M_APPROVE_PENGGANTI && p.can_approve_pengganti) aksi = pairPenggantiMaint(p.id, 'approve_atasan', 'Setujui');
+        else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && M_VERIFIKASI && p.can_verifikasi) aksi = pair('verifikasi', p.id, 'valid');
+        else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && M_VERIFIKASI_PENGGANTI && p.can_verifikasi_pengganti) aksi = pairPenggantiMaint(p.id, 'verifikasi', 'Verifikasi');
+        else if (p.status === 'diverifikasi' && M_APPROVE && p.can_approve_akhir) aksi = pair('approve', p.id, 'setuju');
+        else if (p.status === 'diverifikasi' && M_APPROVE_AKHIR_PENGGANTI && p.can_approve_akhir_pengganti) aksi = pairPenggantiMaint(p.id, 'approve', 'Approve');
         else if ((p.status === 'disetujui' || p.status === 'dikerjakan') && M_KELOLA) aksi = `<button class="btn btn-outline btn-sm proses-trigger" data-id="${p.id}" data-hasil="${esc(p.hasil_pekerjaan || '')}" data-foto="${esc(p.foto_pekerjaan || '')}"><i data-lucide="hammer"></i> Proses</button>`;
         else if (p.status.includes('ditolak')) aksi = '<i data-lucide="x" style="color:var(--danger);width:20px;height:20px;margin-top:4px"></i>';
         else if (['disetujui_atasan', 'diverifikasi', 'disetujui', 'dikerjakan', 'selesai'].includes(p.status)) aksi = '<i data-lucide="check" style="color:var(--primary);width:20px;height:20px;margin-top:4px"></i>';
@@ -384,7 +391,13 @@ async function loadMaint() {
             descHtml += `<div style="font-size:11.5px;color:var(--danger);margin-top:3px"><i data-lucide="alert-circle" style="width:12px;height:12px;display:inline-block;vertical-align:-2px"></i> Catatan Atasan: ${esc(p.catatan_atasan)}</div>`;
         }
         if (p.approval_pengganti_oleh) {
-            descHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Diputuskan oleh pengganti: <b>${esc(p.pengganti_nama || '-')}</b> — ${esc(p.approval_pengganti_alasan || '-')}</div>`;
+            descHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Disetujui Atasan (Pengganti): <b>${esc(p.pengganti_nama || '-')}</b> — ${esc(p.approval_pengganti_alasan || '-')}</div>`;
+        }
+        if (p.verifikasi_pengganti_oleh) {
+            descHtml += `<div style="font-size:11.5px;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:4px;padding:3px 6px;margin-top:4px">Diverifikasi Pengganti: <b>${esc(p.verifikasi_pengganti_nama || '-')}</b> — ${esc(p.verifikasi_pengganti_alasan || '-')}</div>`;
+        }
+        if (p.approve_akhir_pengganti_oleh) {
+            descHtml += `<div style="font-size:11.5px;color:#065f46;background:#d1fae5;border:1px solid #a7f3d0;border-radius:4px;padding:3px 6px;margin-top:4px">Approve Akhir Pengganti: <b>${esc(p.approve_akhir_pengganti_nama || '-')}</b> — ${esc(p.approve_akhir_pengganti_alasan || '-')}</div>`;
         }
         if (p.foto_pekerjaan) {
             descHtml += `<div style="margin-top:6px"><button type="button" class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11.5px;color:var(--primary);border-color:var(--primary)" onclick="bukaModalFoto('${esc(p.foto_pekerjaan)}', 'Bukti Hasil Pekerjaan Teknisi: ${esc(p.hasil_pekerjaan || '-')}', 'Foto Bukti Pekerjaan Maintenance')"><i data-lucide="camera" style="width:12px;height:12px;vertical-align:-2px"></i> Bukti Pekerjaan</button></div>`;
@@ -415,29 +428,41 @@ function pairAtasan(action, id) {
     return `<button class="btn btn-primary btn-sm" onclick="prosesAtasan('${action}',${id},1)">Setuju</button>
             <button class="btn btn-danger btn-sm" onclick="prosesAtasan('${action}',${id},0)">Tolak</button>`;
 }
-function pairPenggantiMaint(id) {
-    return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiMaint(${id},1)">Setujui sbg Pengganti</button>
-            <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiMaint(${id},0)">Tolak sbg Pengganti</button>`;
+function pairPenggantiMaint(id, action = 'approve_atasan', label = 'Setujui') {
+    return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiMaint(${id},1,'${action}','${label}')">${label} sbg Pengganti</button>
+            <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiMaint(${id},0,'${action}','${label}')">Tolak sbg Pengganti</button>`;
 }
-function bukaModalPenggantiMaint(id, setuju) {
+function bukaModalPenggantiMaint(id, setuju, action = 'approve_atasan', label = 'Setujui') {
     document.getElementById('pgMaintId').value = id;
     document.getElementById('pgMaintSetuju').value = setuju ? '1' : '0';
+    document.getElementById('pgMaintAction').value = action;
     document.getElementById('pgMaintAlasan').value = '';
     document.getElementById('pgMaintCatatan').value = '';
     document.getElementById('pgMaintCatatanWrap').style.display = setuju ? 'none' : 'block';
+    const descEl = document.getElementById('pgMaintDesc');
+    if (descEl) {
+        if (action === 'verifikasi') {
+            descEl.textContent = 'Anda akan memverifikasi pengajuan maintenance ini sebagai pengganti Team Leader yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke Team Leader.';
+        } else if (action === 'approve') {
+            descEl.textContent = 'Anda akan memberikan persetujuan akhir pengajuan maintenance ini sebagai pengganti SPV Sapras yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke SPV Sapras.';
+        } else {
+            descEl.textContent = 'Anda akan memproses pengajuan maintenance ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.';
+        }
+    }
     document.getElementById('modalPenggantiMaintTitle').textContent = setuju
-        ? 'Setujui sebagai Pengganti'
-        : 'Tolak sebagai Pengganti';
+        ? `${label} sebagai Pengganti`
+        : `Tolak (${label}) sebagai Pengganti`;
     const btn = document.getElementById('btnSubmitPenggantiMaint');
     if (btn) {
         btn.className = setuju ? 'btn btn-primary' : 'btn btn-danger';
-        btn.textContent = setuju ? 'Setujui sebagai Pengganti' : 'Tolak sebagai Pengganti';
+        btn.textContent = setuju ? `${label} sebagai Pengganti` : 'Tolak sebagai Pengganti';
     }
     openModal('modalPenggantiMaint');
 }
 async function submitApprovePenggantiMaint(btn) {
     const id = document.getElementById('pgMaintId').value;
     const setuju = document.getElementById('pgMaintSetuju').value;
+    const action = document.getElementById('pgMaintAction').value || 'approve_atasan';
     const alasan = document.getElementById('pgMaintAlasan').value.trim();
     const catatan = document.getElementById('pgMaintCatatan').value.trim();
     if (alasan.length < 10) {
@@ -448,11 +473,13 @@ async function submitApprovePenggantiMaint(btn) {
     }
     if (btn) btn.disabled = true;
     try {
-        const r = await apiFetch('maintenance', 'approve_atasan', {
+        const r = await apiFetch('maintenance', action, {
             id,
             setuju,
+            valid: setuju,
             pengganti: 1,
             alasan,
+            catatan: catatan,
             catatan_atasan: catatan
         });
         if (r.ok) {

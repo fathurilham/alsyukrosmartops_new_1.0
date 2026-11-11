@@ -26,6 +26,8 @@ switch ($action) {
         $canSeeAllSubmitted = hasAccess($role, 'maintenance', 'kelola')
             || hasAccess($role, 'maintenance', 'approve')
             || hasAccess($role, 'maintenance', 'verifikasi')
+            || hasAccess($role, 'maintenance', 'verifikasi_pengganti')
+            || hasAccess($role, 'maintenance', 'approve_akhir_pengganti')
             || hasAccess($role, 'maintenance', 'monitoring')
             || $role === 'admin'
             || $role === 'manajer_ga';
@@ -34,6 +36,7 @@ switch ($action) {
 
         $sql = "SELECT pm.*, f.nama_fasilitas, f.lokasi, u1.name AS pemohon_nama, u1.unit_id AS pemohon_unit_id,
                        u2.name AS tl_nama, u3.name AS spv_nama, u5.name AS atasan_nama, u6.name AS pengganti_nama,
+                       u7.name AS verifikasi_pengganti_nama, u8.name AS approve_akhir_pengganti_nama,
                        prm.teknisi_id, u4.name AS teknisi_nama, prm.hasil_pekerjaan, prm.foto_pekerjaan, prm.tanggal_selesai
                 FROM pengajuan_maintenance pm
                 LEFT JOIN fasilitas f ON f.id = pm.fasilitas_id
@@ -44,6 +47,8 @@ switch ($action) {
                 LEFT JOIN users u4 ON u4.id = prm.teknisi_id
                 LEFT JOIN users u5 ON u5.id = pm.atasan_id
                 LEFT JOIN users u6 ON u6.id = pm.approval_pengganti_oleh
+                LEFT JOIN users u7 ON u7.id = pm.verifikasi_pengganti_oleh
+                LEFT JOIN users u8 ON u8.id = pm.approve_akhir_pengganti_oleh
                 WHERE (
                     pm.pemohon_id = ?
                     OR (? > 0 AND ? > 0 AND pm.pemohon_id = ? AND u1.unit_id = ?)
@@ -58,13 +63,15 @@ switch ($action) {
                     OR (? = 1 AND pm.status != 'menunggu_approval_atasan')
                     OR (? = 1 AND pm.status = 'menunggu_approval_atasan')
                     OR pm.approval_pengganti_oleh = ?
+                    OR pm.verifikasi_pengganti_oleh = ?
+                    OR pm.approve_akhir_pengganti_oleh = ?
                 )
                 ORDER BY pm.id DESC";
         $flagAtasan = $canApproveAtasan ? 1 : 0;
         $flagAll = $canSeeAllSubmitted ? 1 : 0;
         $flagPengganti = $canApprovePengganti ? 1 : 0;
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("iiiiiiiiiii", $uid, $atasanSayaId, $unitId, $atasanSayaId, $unitId, $flagAtasan, $unitId, $uid, $flagAll, $flagPengganti, $uid);
+        $stmt->bind_param("iiiiiiiiiiiii", $uid, $atasanSayaId, $unitId, $atasanSayaId, $unitId, $flagAtasan, $unitId, $uid, $flagAll, $flagPengganti, $uid, $uid, $uid);
         $stmt->execute();
         $rawRows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -75,7 +82,13 @@ switch ($action) {
             $expectedAtasanId = (int)getAtasanId($pemohonId);
             $isAtasanSeunitRow = ($atasanSayaId > 0 && $unitId > 0 && $pemohonId === $atasanSayaId && $pemohonUnitId === $unitId);
             $isApproveAtasanRow = ($canApproveAtasan && ($pemohonUnitId === $unitId || $expectedAtasanId === $uid));
-            $isOwnOrHistoryRow = ($pemohonId === $uid || (int)($row['approval_pengganti_oleh'] ?? 0) === $uid || $isAtasanSeunitRow);
+            $isOwnOrHistoryRow = (
+                $pemohonId === $uid
+                || (int)($row['approval_pengganti_oleh'] ?? 0) === $uid
+                || (int)($row['verifikasi_pengganti_oleh'] ?? 0) === $uid
+                || (int)($row['approve_akhir_pengganti_oleh'] ?? 0) === $uid
+                || $isAtasanSeunitRow
+            );
             $isSubmittedRow = ($canSeeAllSubmitted && $row['status'] !== 'menunggu_approval_atasan');
             $canActPengganti = ($row['status'] === 'menunggu_approval_atasan'
                 && $canApprovePengganti
@@ -89,6 +102,16 @@ switch ($action) {
                 && $canApproveAtasan
                 && $expectedAtasanId === $uid);
             $row['can_approve_pengganti'] = $canActPengganti;
+            $row['can_verifikasi'] = (in_array($row['status'], ['diajukan', 'disetujui_atasan'], true)
+                && hasAccess($role, 'maintenance', 'verifikasi')
+                && $pemohonId !== $uid);
+            $row['can_verifikasi_pengganti'] = (in_array($row['status'], ['diajukan', 'disetujui_atasan'], true)
+                && bolehVerifikasiPengganti($user, 'maintenance', $pemohonId));
+            $row['can_approve_akhir'] = ($row['status'] === 'diverifikasi'
+                && hasAccess($role, 'maintenance', 'approve')
+                && $pemohonId !== $uid);
+            $row['can_approve_akhir_pengganti'] = ($row['status'] === 'diverifikasi'
+                && bolehApproveAkhirPengganti($user, 'maintenance', $pemohonId));
             $rows[] = $row;
         }
         ok($rows);
@@ -168,11 +191,26 @@ switch ($action) {
         ok();
 
     case 'verifikasi':
-        if (!hasAccess($role, 'maintenance', 'verifikasi')) forbid('Akses ditolak.');
+        $viaPengganti = (string)($_POST['pengganti'] ?? '0') === '1';
+        $alasanPengganti = trim($_POST['alasan'] ?? '');
+        $catatan = trim($_POST['catatan'] ?? '');
+        if ($viaPengganti) {
+            if (!hasAccess($role, 'maintenance', 'verifikasi_pengganti')) {
+                forbid('Akses ditolak. Anda tidak memiliki hak akses verifikasi pengganti.');
+            }
+            $lenAlasan = mb_strlen($alasanPengganti, 'UTF-8');
+            if ($lenAlasan < 10 || $lenAlasan > 255) {
+                fail('Alasan menggantikan wajib diisi antara 10 hingga 255 karakter.');
+            }
+        } else {
+            if (!hasAccess($role, 'maintenance', 'verifikasi')) forbid('Akses ditolak.');
+        }
+
         $id = (int)($_POST['id'] ?? 0);
         if ($id < 1) fail('ID pengajuan tidak valid.');
         $valid = ($_POST['valid'] ?? '1') === '1';
         $status = $valid ? 'diverifikasi' : 'ditolak';
+        $evalVerif = null;
 
         $conn->begin_transaction();
         try {
@@ -194,35 +232,89 @@ switch ($action) {
                 fail("Pengajuan maintenance #$id tidak dapat diverifikasi karena status saat ini adalah '{$pm['status']}'.");
             }
 
-            $stmt = $conn->prepare("UPDATE pengajuan_maintenance SET status=?, tl_verifikasi_id=? WHERE id=?");
-            $stmt->bind_param("sii", $status, $user['id'], $id);
-            $stmt->execute();
+            if ($viaPengganti) {
+                $evalVerif = getDetailVerifikasiPengganti($user, 'maintenance', (int)$pm['pemohon_id']);
+                if (empty($evalVerif['allowed'])) {
+                    $conn->rollback();
+                    fail($evalVerif['msg'], (int)($evalVerif['code'] ?? 403));
+                }
+                $catatanFinal = $catatan !== '' ? $catatan : $alasanPengganti;
+                $stmt = $conn->prepare("UPDATE pengajuan_maintenance SET status=?, tl_verifikasi_id=?, catatan=?, verifikasi_pengganti_oleh=?, verifikasi_pengganti_alasan=?, verifikasi_pengganti_pada=NOW() WHERE id=?");
+                $stmt->bind_param("sisisi", $status, $user['id'], $catatanFinal, $user['id'], $alasanPengganti, $id);
+                $stmt->execute();
+            } else {
+                $stmt = $conn->prepare("UPDATE pengajuan_maintenance SET status=?, tl_verifikasi_id=? WHERE id=?");
+                $stmt->bind_param("sii", $status, $user['id'], $id);
+                $stmt->execute();
+            }
             $conn->commit();
         } catch (Throwable $e) {
             $conn->rollback();
             throw $e;
         }
 
-        logAktivitas($user['id'], 'maintenance', "Verifikasi kondisi fasilitas pengajuan #$id: $status");
         $prioritas = $pm['prioritas'] ?? 'normal';
         $prefix = ($prioritas === 'darurat') ? '[DARURAT] ' : '';
 
-        if ($valid) {
-            notifyRole('spv_sapras', 'maintenance', $prefix . "Pengajuan maintenance #$id telah diverifikasi TL, menunggu approval.", null, [
-                'kategori' => 'persetujuan',
+        if ($viaPengganti) {
+            $kata = $valid ? 'memverifikasi' : 'menolak verifikasi';
+            $namaPemohon = $evalVerif['pemohon']['name'] ?? ('User #' . $pm['pemohon_id']);
+            logAktivitas($user['id'], 'maintenance', "Verifikasi sebagai PENGGANTI: {$user['name']} ({$user['nama_role']}) {$kata} maintenance #$id milik {$namaPemohon} menggantikan Team Leader. Alasan: {$alasanPengganti}");
+            notifyRole('team_leader', 'maintenance', $prefix . "Pengajuan maintenance #$id milik {$namaPemohon} diambil alih verifikasinya ($status) oleh {$user['name']} ({$user['nama_role']}). Alasan: {$alasanPengganti}", null, [
+                'kategori'  => 'persetujuan',
                 'prioritas' => $prioritas,
                 'link_page' => 'maintenance',
-                'link_tab' => 'pengajuan'
+                'link_tab'  => 'pengajuan',
             ]);
+            if ($valid) {
+                kirimNotifikasi($pm['pemohon_id'], 'maintenance', $prefix . "Pengajuan maintenance #$id Anda telah diverifikasi oleh pejabat pengganti ({$user['name']}), menunggu approval SPV Sapras. Alasan: {$alasanPengganti}", [
+                    'kategori'  => 'persetujuan',
+                    'prioritas' => $prioritas,
+                    'link_page' => 'maintenance',
+                    'link_tab'  => 'pengajuan',
+                ]);
+            } else {
+                kirimNotifikasi($pm['pemohon_id'], 'maintenance', $prefix . "Pengajuan maintenance #$id Anda ditolak pada tahap verifikasi oleh pejabat pengganti ({$user['name']}). Alasan: {$alasanPengganti}", [
+                    'kategori'  => 'persetujuan',
+                    'prioritas' => $prioritas,
+                    'link_page' => 'maintenance',
+                    'link_tab'  => 'pengajuan',
+                ]);
+            }
+        } else {
+            logAktivitas($user['id'], 'maintenance', "Verifikasi kondisi fasilitas pengajuan #$id: $status");
+            if ($valid) {
+                notifyRole('spv_sapras', 'maintenance', $prefix . "Pengajuan maintenance #$id telah diverifikasi TL, menunggu approval.", null, [
+                    'kategori' => 'persetujuan',
+                    'prioritas' => $prioritas,
+                    'link_page' => 'maintenance',
+                    'link_tab' => 'pengajuan'
+                ]);
+            }
         }
         ok();
 
     case 'approve':
-        if (!hasAccess($role, 'maintenance', 'approve')) forbid('Akses ditolak.');
+        $viaPengganti = (string)($_POST['pengganti'] ?? '0') === '1';
+        $alasanPengganti = trim($_POST['alasan'] ?? '');
+        $catatan = trim($_POST['catatan'] ?? '');
+        if ($viaPengganti) {
+            if (!hasAccess($role, 'maintenance', 'approve_akhir_pengganti')) {
+                forbid('Akses ditolak. Anda tidak memiliki hak akses persetujuan akhir pengganti.');
+            }
+            $lenAlasan = mb_strlen($alasanPengganti, 'UTF-8');
+            if ($lenAlasan < 10 || $lenAlasan > 255) {
+                fail('Alasan menggantikan wajib diisi antara 10 hingga 255 karakter.');
+            }
+        } else {
+            if (!hasAccess($role, 'maintenance', 'approve')) forbid('Akses ditolak.');
+        }
+
         $id = (int)($_POST['id'] ?? 0);
         if ($id < 1) fail('ID pengajuan tidak valid.');
         $setuju = ($_POST['setuju'] ?? '1') === '1';
         $status = $setuju ? 'disetujui' : 'ditolak';
+        $evalApp = null;
 
         $conn->begin_transaction();
         try {
@@ -244,9 +336,21 @@ switch ($action) {
                 fail("Pengajuan maintenance #$id tidak dapat disetujui karena status saat ini adalah '{$pm['status']}' (harus 'diverifikasi').");
             }
 
-            $stmt = $conn->prepare("UPDATE pengajuan_maintenance SET status=?, spv_approval_id=? WHERE id=?");
-            $stmt->bind_param("sii", $status, $user['id'], $id);
-            $stmt->execute();
+            if ($viaPengganti) {
+                $evalApp = getDetailApproveAkhirPengganti($user, 'maintenance', (int)$pm['pemohon_id']);
+                if (empty($evalApp['allowed'])) {
+                    $conn->rollback();
+                    fail($evalApp['msg'], (int)($evalApp['code'] ?? 403));
+                }
+                $catatanFinal = $catatan !== '' ? $catatan : $alasanPengganti;
+                $stmt = $conn->prepare("UPDATE pengajuan_maintenance SET status=?, spv_approval_id=?, catatan=?, approve_akhir_pengganti_oleh=?, approve_akhir_pengganti_alasan=?, approve_akhir_pengganti_pada=NOW() WHERE id=?");
+                $stmt->bind_param("sisisi", $status, $user['id'], $catatanFinal, $user['id'], $alasanPengganti, $id);
+                $stmt->execute();
+            } else {
+                $stmt = $conn->prepare("UPDATE pengajuan_maintenance SET status=?, spv_approval_id=? WHERE id=?");
+                $stmt->bind_param("sii", $status, $user['id'], $id);
+                $stmt->execute();
+            }
 
             if ($setuju) {
                 $stmt2 = $conn->prepare("INSERT INTO proses_maintenance (pengajuan_id, tanggal_mulai) VALUES (?, CURDATE())");
@@ -270,15 +374,35 @@ switch ($action) {
                 'link_tab' => 'proses'
             ]);
         }
-        if ($pm) {
-            kirimNotifikasi($pm['pemohon_id'], 'maintenance', $prefix . "Pengajuan maintenance Anda #$id: $status.", [
-                'kategori' => 'persetujuan',
+        if ($viaPengganti) {
+            $kata = $setuju ? 'menyetujui' : 'menolak';
+            $namaPemohon = $evalApp['pemohon']['name'] ?? ('User #' . $pm['pemohon_id']);
+            logAktivitas($user['id'], 'maintenance', "Approve Akhir sebagai PENGGANTI: {$user['name']} ({$user['nama_role']}) {$kata} maintenance #$id milik {$namaPemohon} menggantikan SPV Sapras. Alasan: {$alasanPengganti}");
+            notifyRole('spv_sapras', 'maintenance', $prefix . "Pengajuan maintenance #$id milik {$namaPemohon} diambil alih persetujuan akhirnya ($status) oleh {$user['name']} ({$user['nama_role']}). Alasan: {$alasanPengganti}", null, [
+                'kategori'  => 'persetujuan',
                 'prioritas' => $prioritas,
                 'link_page' => 'maintenance',
-                'link_tab' => 'pengajuan'
+                'link_tab'  => 'pengajuan',
             ]);
+            if ($pm) {
+                kirimNotifikasi($pm['pemohon_id'], 'maintenance', $prefix . "Pengajuan maintenance Anda #$id telah $status oleh pejabat pengganti ({$user['name']}). Alasan: {$alasanPengganti}", [
+                    'kategori'  => 'persetujuan',
+                    'prioritas' => $prioritas,
+                    'link_page' => 'maintenance',
+                    'link_tab'  => 'pengajuan',
+                ]);
+            }
+        } else {
+            if ($pm) {
+                kirimNotifikasi($pm['pemohon_id'], 'maintenance', $prefix . "Pengajuan maintenance Anda #$id: $status.", [
+                    'kategori' => 'persetujuan',
+                    'prioritas' => $prioritas,
+                    'link_page' => 'maintenance',
+                    'link_tab' => 'pengajuan'
+                ]);
+            }
+            logAktivitas($user['id'], 'maintenance', "Approval pengajuan maintenance #$id: $status");
         }
-        logAktivitas($user['id'], 'maintenance', "Approval pengajuan maintenance #$id: $status");
         ok();
 
     case 'proses':

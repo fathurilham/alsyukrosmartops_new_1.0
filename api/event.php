@@ -23,15 +23,18 @@ switch ($action) {
         $canSeeAllSubmitted = hasAccess($role, 'event', 'kelola')
             || hasAccess($role, 'event', 'approve')
             || hasAccess($role, 'event', 'verifikasi')
+            || hasAccess($role, 'event', 'verifikasi_pengganti')
+            || hasAccess($role, 'event', 'approve_akhir_pengganti')
             || hasAccess($role, 'event', 'monitoring')
             || $role === 'admin'
-            || $role === 'manajer_ga';
+            || $role === 'manajer_ga'
+            || $role === 'manajer_markom';
         $canApproveAtasan = hasAccess($role, 'event', 'approve_atasan');
         $canApprovePengganti = hasAccess($role, 'event', 'approve_pengganti');
 
         $sql = "SELECT e.*, u1.name AS pemohon_nama, u1.unit_id AS pemohon_unit_id,
                        u2.name AS verifikator_nama, u3.name AS approval_nama, u4.name AS atasan_nama,
-                       u5.name AS pengganti_nama,
+                       u5.name AS pengganti_nama, u6.name AS verifikasi_pengganti_nama, u7.name AS approve_akhir_pengganti_nama,
                        j.tanggal, j.jam_mulai, j.jam_selesai, j.lokasi
                 FROM event e
                 JOIN users u1 ON u1.id = e.pemohon_id
@@ -39,6 +42,8 @@ switch ($action) {
                 LEFT JOIN users u3 ON u3.id = e.approval_id
                 LEFT JOIN users u4 ON u4.id = e.atasan_id
                 LEFT JOIN users u5 ON u5.id = e.approval_pengganti_oleh
+                LEFT JOIN users u6 ON u6.id = e.verifikasi_pengganti_oleh
+                LEFT JOIN users u7 ON u7.id = e.approve_akhir_pengganti_oleh
                 LEFT JOIN jadwal_event j ON j.event_id = e.id
                 WHERE (
                     e.pemohon_id = ?
@@ -54,13 +59,15 @@ switch ($action) {
                     OR (? = 1 AND e.status != 'menunggu_approval_atasan')
                     OR (? = 1 AND e.status = 'menunggu_approval_atasan')
                     OR e.approval_pengganti_oleh = ?
+                    OR e.verifikasi_pengganti_oleh = ?
+                    OR e.approve_akhir_pengganti_oleh = ?
                 )
                 ORDER BY e.id DESC";
         $flagAtasan = $canApproveAtasan ? 1 : 0;
         $flagAll = $canSeeAllSubmitted ? 1 : 0;
         $flagPengganti = $canApprovePengganti ? 1 : 0;
         $stmt = $conn->prepare($sql);
-        $stmt->bind_param("iiiiiiiiiii", $uid, $atasanSayaId, $unitId, $atasanSayaId, $unitId, $flagAtasan, $unitId, $uid, $flagAll, $flagPengganti, $uid);
+        $stmt->bind_param("iiiiiiiiiiiii", $uid, $atasanSayaId, $unitId, $atasanSayaId, $unitId, $flagAtasan, $unitId, $uid, $flagAll, $flagPengganti, $uid, $uid, $uid);
         $stmt->execute();
         $rawRows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -71,7 +78,13 @@ switch ($action) {
             $expectedAtasanId = (int)getAtasanId($pemohonId);
             $isAtasanSeunitRow = ($atasanSayaId > 0 && $unitId > 0 && $pemohonId === $atasanSayaId && $pemohonUnitId === $unitId);
             $isApproveAtasanRow = ($canApproveAtasan && ($pemohonUnitId === $unitId || $expectedAtasanId === $uid));
-            $isOwnOrHistoryRow = ($pemohonId === $uid || (int)($row['approval_pengganti_oleh'] ?? 0) === $uid || $isAtasanSeunitRow);
+            $isOwnOrHistoryRow = (
+                $pemohonId === $uid
+                || (int)($row['approval_pengganti_oleh'] ?? 0) === $uid
+                || (int)($row['verifikasi_pengganti_oleh'] ?? 0) === $uid
+                || (int)($row['approve_akhir_pengganti_oleh'] ?? 0) === $uid
+                || $isAtasanSeunitRow
+            );
             $isSubmittedRow = ($canSeeAllSubmitted && $row['status'] !== 'menunggu_approval_atasan');
             $canActPengganti = ($row['status'] === 'menunggu_approval_atasan'
                 && $canApprovePengganti
@@ -85,6 +98,16 @@ switch ($action) {
                 && $canApproveAtasan
                 && $expectedAtasanId === $uid);
             $row['can_approve_pengganti'] = $canActPengganti;
+            $row['can_verifikasi'] = (in_array($row['status'], ['diajukan', 'disetujui_atasan'], true)
+                && hasAccess($role, 'event', 'verifikasi')
+                && $pemohonId !== $uid);
+            $row['can_verifikasi_pengganti'] = (in_array($row['status'], ['diajukan', 'disetujui_atasan'], true)
+                && bolehVerifikasiPengganti($user, 'event', $pemohonId));
+            $row['can_approve_akhir'] = ($row['status'] === 'diverifikasi'
+                && hasAccess($role, 'event', 'approve')
+                && $pemohonId !== $uid);
+            $row['can_approve_akhir_pengganti'] = ($row['status'] === 'diverifikasi'
+                && bolehApproveAkhirPengganti($user, 'event', $pemohonId));
             $rows[] = $row;
         }
         ok($rows);
@@ -137,7 +160,7 @@ switch ($action) {
                 ? "Mengajukan event: $nama (jalur pengganti: diajukan langsung oleh pimpinan unit)"
                 : "Mengajukan event: $nama";
             logAktivitas($user['id'], 'event', $logMsg);
-            notifyRole('spv_crm', 'event', $user['name'] . " mengajukan event \"$nama\", mohon diverifikasi.", null, [
+            notifyRole('staff_crm', 'event', $user['name'] . " mengajukan event \"$nama\", mohon diverifikasi.", null, [
                 'kategori' => 'persetujuan',
                 'link_page' => 'event',
                 'link_tab' => 'pengajuan'
@@ -159,11 +182,26 @@ switch ($action) {
         ok();
 
     case 'verifikasi':
-        if (!hasAccess($role, 'event', 'verifikasi')) forbid('Akses ditolak.');
+        $viaPengganti = (string)($_POST['pengganti'] ?? '0') === '1';
+        $alasanPengganti = trim($_POST['alasan'] ?? '');
+        $catatan = trim($_POST['catatan'] ?? '');
+        if ($viaPengganti) {
+            if (!hasAccess($role, 'event', 'verifikasi_pengganti')) {
+                forbid('Akses ditolak. Anda tidak memiliki hak akses verifikasi pengganti.');
+            }
+            $lenAlasan = mb_strlen($alasanPengganti, 'UTF-8');
+            if ($lenAlasan < 10 || $lenAlasan > 255) {
+                fail('Alasan menggantikan wajib diisi antara 10 hingga 255 karakter.');
+            }
+        } else {
+            if (!hasAccess($role, 'event', 'verifikasi')) forbid('Akses ditolak.');
+        }
+
         $id = (int)($_POST['id'] ?? 0);
         if ($id < 1) fail('ID event tidak valid.');
         $valid = ($_POST['valid'] ?? '1') === '1';
         $status = $valid ? 'diverifikasi' : 'ditolak';
+        $evalVerif = null;
 
         $conn->begin_transaction();
         try {
@@ -185,46 +223,101 @@ switch ($action) {
                 fail("Event #$id tidak dapat diverifikasi karena status saat ini adalah '{$ev['status']}'.");
             }
 
-            $stmt = $conn->prepare("UPDATE event SET status=?, verifikator_id=? WHERE id=?");
-            $stmt->bind_param("sii", $status, $user['id'], $id);
-            $stmt->execute();
+            if ($viaPengganti) {
+                $evalVerif = getDetailVerifikasiPengganti($user, 'event', (int)$ev['pemohon_id']);
+                if (empty($evalVerif['allowed'])) {
+                    $conn->rollback();
+                    fail($evalVerif['msg'], (int)($evalVerif['code'] ?? 403));
+                }
+                $catatanFinal = $catatan !== '' ? $catatan : $alasanPengganti;
+                $stmt = $conn->prepare("UPDATE event SET status=?, verifikator_id=?, catatan=?, verifikasi_pengganti_oleh=?, verifikasi_pengganti_alasan=?, verifikasi_pengganti_pada=NOW() WHERE id=?");
+                $stmt->bind_param("sisisi", $status, $user['id'], $catatanFinal, $user['id'], $alasanPengganti, $id);
+                $stmt->execute();
+            } else {
+                $stmt = $conn->prepare("UPDATE event SET status=?, verifikator_id=? WHERE id=?");
+                $stmt->bind_param("sii", $status, $user['id'], $id);
+                $stmt->execute();
+            }
             $conn->commit();
         } catch (Throwable $e) {
             $conn->rollback();
             throw $e;
         }
 
-        logAktivitas($user['id'], 'event', "Verifikasi pengajuan event #$id: $status");
-        if ($valid) {
-            notifyRole('manajer_markom', 'event', "Pengajuan event \"{$ev['nama_event']}\" telah diverifikasi oleh SPV CRM, menunggu approval Anda.", null, [
-                'kategori' => 'persetujuan',
+        if ($viaPengganti) {
+            $kata = $valid ? 'memverifikasi' : 'menolak verifikasi';
+            $namaPemohon = $evalVerif['pemohon']['name'] ?? ('User #' . $ev['pemohon_id']);
+            logAktivitas($user['id'], 'event', "Verifikasi sebagai PENGGANTI: {$user['name']} ({$user['nama_role']}) {$kata} event #$id (\"{$ev['nama_event']}\") milik {$namaPemohon} menggantikan Staff CRM. Alasan: {$alasanPengganti}");
+            notifyRole('staff_crm', 'event', "Pengajuan event \"{$ev['nama_event']}\" (#$id) milik {$namaPemohon} diambil alih verifikasinya ($status) oleh {$user['name']} ({$user['nama_role']}). Alasan: {$alasanPengganti}", null, [
+                'kategori'  => 'persetujuan',
                 'link_page' => 'event',
-                'link_tab' => 'pengajuan'
+                'link_tab'  => 'pengajuan',
             ]);
-            if ($ev && $ev['pemohon_id']) {
-                kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" telah diverifikasi SPV CRM, menunggu approval Manajer MARKOM.", [
-                    'kategori' => 'persetujuan',
-                    'link_page' => 'event',
-                    'link_tab' => 'pengajuan'
-                ]);
+            if ($valid) {
+                if ($ev && $ev['pemohon_id']) {
+                    kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" Anda telah diverifikasi oleh pejabat pengganti ({$user['name']}), menunggu approval SPV CRM. Alasan: {$alasanPengganti}", [
+                        'kategori'  => 'persetujuan',
+                        'link_page' => 'event',
+                        'link_tab'  => 'pengajuan',
+                    ]);
+                }
+            } else {
+                if ($ev && $ev['pemohon_id']) {
+                    kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" Anda ditolak pada tahap verifikasi oleh pejabat pengganti ({$user['name']}). Alasan: {$alasanPengganti}", [
+                        'kategori'  => 'persetujuan',
+                        'link_page' => 'event',
+                        'link_tab'  => 'pengajuan',
+                    ]);
+                }
             }
         } else {
-            if ($ev && $ev['pemohon_id']) {
-                kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" ditolak pada tahap verifikasi.", [
+            logAktivitas($user['id'], 'event', "Verifikasi pengajuan event #$id: $status");
+            if ($valid) {
+                notifyRole('spv_crm', 'event', "Pengajuan event \"{$ev['nama_event']}\" telah diverifikasi oleh Staff CRM, menunggu approval Anda.", null, [
                     'kategori' => 'persetujuan',
                     'link_page' => 'event',
                     'link_tab' => 'pengajuan'
                 ]);
+                if ($ev && $ev['pemohon_id']) {
+                    kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" telah diverifikasi Staff CRM, menunggu approval SPV CRM.", [
+                        'kategori' => 'persetujuan',
+                        'link_page' => 'event',
+                        'link_tab' => 'pengajuan'
+                    ]);
+                }
+            } else {
+                if ($ev && $ev['pemohon_id']) {
+                    kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" ditolak pada tahap verifikasi.", [
+                        'kategori' => 'persetujuan',
+                        'link_page' => 'event',
+                        'link_tab' => 'pengajuan'
+                    ]);
+                }
             }
         }
         ok();
 
     case 'approve':
-        if (!hasAccess($role, 'event', 'approve')) forbid('Akses ditolak.');
+        $viaPengganti = (string)($_POST['pengganti'] ?? '0') === '1';
+        $alasanPengganti = trim($_POST['alasan'] ?? '');
+        $catatan = trim($_POST['catatan'] ?? '');
+        if ($viaPengganti) {
+            if (!hasAccess($role, 'event', 'approve_akhir_pengganti')) {
+                forbid('Akses ditolak. Anda tidak memiliki hak akses persetujuan akhir pengganti.');
+            }
+            $lenAlasan = mb_strlen($alasanPengganti, 'UTF-8');
+            if ($lenAlasan < 10 || $lenAlasan > 255) {
+                fail('Alasan menggantikan wajib diisi antara 10 hingga 255 karakter.');
+            }
+        } else {
+            if (!hasAccess($role, 'event', 'approve')) forbid('Akses ditolak.');
+        }
+
         $id = (int)($_POST['id'] ?? 0);
         if ($id < 1) fail('ID event tidak valid.');
         $setuju = ($_POST['setuju'] ?? '1') === '1';
         $status = $setuju ? 'disetujui' : 'ditolak';
+        $evalApp = null;
 
         $conn->begin_transaction();
         try {
@@ -246,23 +339,53 @@ switch ($action) {
                 fail("Event #$id tidak dapat disetujui karena status saat ini adalah '{$ev['status']}' (harus 'diverifikasi').");
             }
 
-            $stmt = $conn->prepare("UPDATE event SET status=?, approval_id=? WHERE id=?");
-            $stmt->bind_param("sii", $status, $user['id'], $id);
-            $stmt->execute();
+            if ($viaPengganti) {
+                $evalApp = getDetailApproveAkhirPengganti($user, 'event', (int)$ev['pemohon_id']);
+                if (empty($evalApp['allowed'])) {
+                    $conn->rollback();
+                    fail($evalApp['msg'], (int)($evalApp['code'] ?? 403));
+                }
+                $catatanFinal = $catatan !== '' ? $catatan : $alasanPengganti;
+                $stmt = $conn->prepare("UPDATE event SET status=?, approval_id=?, catatan=?, approve_akhir_pengganti_oleh=?, approve_akhir_pengganti_alasan=?, approve_akhir_pengganti_pada=NOW() WHERE id=?");
+                $stmt->bind_param("sisisi", $status, $user['id'], $catatanFinal, $user['id'], $alasanPengganti, $id);
+                $stmt->execute();
+            } else {
+                $stmt = $conn->prepare("UPDATE event SET status=?, approval_id=? WHERE id=?");
+                $stmt->bind_param("sii", $status, $user['id'], $id);
+                $stmt->execute();
+            }
             $conn->commit();
         } catch (Throwable $e) {
             $conn->rollback();
             throw $e;
         }
 
-        if ($ev && $ev['pemohon_id']) {
-            kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" telah $status.", [
-                'kategori' => 'persetujuan',
+        if ($viaPengganti) {
+            $kata = $setuju ? 'menyetujui' : 'menolak';
+            $namaPemohon = $evalApp['pemohon']['name'] ?? ('User #' . $ev['pemohon_id']);
+            logAktivitas($user['id'], 'event', "Approve Akhir sebagai PENGGANTI: {$user['name']} ({$user['nama_role']}) {$kata} event #$id (\"{$ev['nama_event']}\") milik {$namaPemohon} menggantikan SPV CRM. Alasan: {$alasanPengganti}");
+            notifyRole('spv_crm', 'event', "Pengajuan event \"{$ev['nama_event']}\" (#$id) milik {$namaPemohon} diambil alih persetujuan akhirnya ($status) oleh {$user['name']} ({$user['nama_role']}). Alasan: {$alasanPengganti}", null, [
+                'kategori'  => 'persetujuan',
                 'link_page' => 'event',
-                'link_tab' => 'pengajuan'
+                'link_tab'  => 'pengajuan',
             ]);
+            if ($ev && $ev['pemohon_id']) {
+                kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" Anda telah $status oleh pejabat pengganti ({$user['name']}). Alasan: {$alasanPengganti}", [
+                    'kategori'  => 'persetujuan',
+                    'link_page' => 'event',
+                    'link_tab'  => 'pengajuan',
+                ]);
+            }
+        } else {
+            if ($ev && $ev['pemohon_id']) {
+                kirimNotifikasi($ev['pemohon_id'], 'event', "Pengajuan event \"{$ev['nama_event']}\" telah $status.", [
+                    'kategori' => 'persetujuan',
+                    'link_page' => 'event',
+                    'link_tab' => 'pengajuan'
+                ]);
+            }
+            logAktivitas($user['id'], 'event', "Approval event #$id: $status");
         }
-        logAktivitas($user['id'], 'event', "Approval event #$id: $status");
         ok();
 
     case 'update_status':

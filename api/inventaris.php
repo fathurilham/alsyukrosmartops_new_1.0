@@ -42,6 +42,8 @@ try {
                 || hasAccess($role, 'inventaris', 'approve')
                 || hasAccess($role, 'inventaris', 'monitoring')
                 || hasAccess($role, 'inventaris', 'verifikasi')
+                || hasAccess($role, 'inventaris', 'verifikasi_pengganti')
+                || hasAccess($role, 'inventaris', 'approve_akhir_pengganti')
                 || $role === 'admin'
                 || $role === 'manajer_ga';
             $canApproveAtasan = hasAccess($role, 'inventaris', 'approve_atasan');
@@ -49,7 +51,7 @@ try {
 
             $sql = "SELECT p.*, b.nama_barang, b.kode_barang, u1.name AS peminjam_nama, u1.unit_id AS peminjam_unit_id, r1.nama_role AS peminjam_jabatan,
                            u2.name AS verifikator_nama, u3.name AS approval_nama, u4.name AS atasan_nama,
-                           u5.name AS pengganti_nama
+                           u5.name AS pengganti_nama, u6.name AS verifikasi_pengganti_nama, u7.name AS approve_akhir_pengganti_nama
                     FROM peminjaman p
                     JOIN barang b ON b.id = p.barang_id
                     JOIN users u1 ON u1.id = p.peminjam_id
@@ -58,6 +60,8 @@ try {
                     LEFT JOIN users u3 ON u3.id = p.approval_id
                     LEFT JOIN users u4 ON u4.id = p.atasan_id
                     LEFT JOIN users u5 ON u5.id = p.approval_pengganti_oleh
+                    LEFT JOIN users u6 ON u6.id = p.verifikasi_pengganti_oleh
+                    LEFT JOIN users u7 ON u7.id = p.approve_akhir_pengganti_oleh
                     WHERE (
                         p.peminjam_id = ?
                         OR (? > 0 AND ? > 0 AND p.peminjam_id = ? AND u1.unit_id = ?)
@@ -72,13 +76,15 @@ try {
                         OR (? = 1 AND p.status != 'menunggu_approval_atasan')
                         OR (? = 1 AND p.status = 'menunggu_approval_atasan')
                         OR p.approval_pengganti_oleh = ?
+                        OR p.verifikasi_pengganti_oleh = ?
+                        OR p.approve_akhir_pengganti_oleh = ?
                     )
                     ORDER BY p.id DESC";
             $flagAtasan = $canApproveAtasan ? 1 : 0;
             $flagAll = $canSeeAllSubmitted ? 1 : 0;
             $flagPengganti = $canApprovePengganti ? 1 : 0;
             $stmt = $conn->prepare($sql);
-            $stmt->bind_param("iiiiiiiiiii", $uid, $atasanSayaId, $unitId, $atasanSayaId, $unitId, $flagAtasan, $unitId, $uid, $flagAll, $flagPengganti, $uid);
+            $stmt->bind_param("iiiiiiiiiiiii", $uid, $atasanSayaId, $unitId, $atasanSayaId, $unitId, $flagAtasan, $unitId, $uid, $flagAll, $flagPengganti, $uid, $uid, $uid);
             $stmt->execute();
             $rawRows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 
@@ -89,7 +95,13 @@ try {
                 $expectedAtasanId = (int)getAtasanId($peminjamId);
                 $isAtasanSeunitRow = ($atasanSayaId > 0 && $unitId > 0 && $peminjamId === $atasanSayaId && $peminjamUnitId === $unitId);
                 $isApproveAtasanRow = ($canApproveAtasan && ($peminjamUnitId === $unitId || $expectedAtasanId === $uid));
-                $isOwnOrHistoryRow = ($peminjamId === $uid || (int)($row['approval_pengganti_oleh'] ?? 0) === $uid || $isAtasanSeunitRow);
+                $isOwnOrHistoryRow = (
+                    $peminjamId === $uid
+                    || (int)($row['approval_pengganti_oleh'] ?? 0) === $uid
+                    || (int)($row['verifikasi_pengganti_oleh'] ?? 0) === $uid
+                    || (int)($row['approve_akhir_pengganti_oleh'] ?? 0) === $uid
+                    || $isAtasanSeunitRow
+                );
                 $isSubmittedRow = ($canSeeAllSubmitted && $row['status'] !== 'menunggu_approval_atasan');
                 $canActPengganti = ($row['status'] === 'menunggu_approval_atasan'
                     && $canApprovePengganti
@@ -103,6 +115,16 @@ try {
                     && $canApproveAtasan
                     && $expectedAtasanId === $uid);
                 $row['can_approve_pengganti'] = $canActPengganti;
+                $row['can_verifikasi'] = (in_array($row['status'], ['diajukan', 'disetujui_atasan'], true)
+                    && hasAccess($role, 'inventaris', 'verifikasi')
+                    && $peminjamId !== $uid);
+                $row['can_verifikasi_pengganti'] = (in_array($row['status'], ['diajukan', 'disetujui_atasan'], true)
+                    && bolehVerifikasiPengganti($user, 'inventaris', $peminjamId));
+                $row['can_approve_akhir'] = ($row['status'] === 'diverifikasi'
+                    && hasAccess($role, 'inventaris', 'approve')
+                    && $peminjamId !== $uid);
+                $row['can_approve_akhir_pengganti'] = ($row['status'] === 'diverifikasi'
+                    && bolehApproveAkhirPengganti($user, 'inventaris', $peminjamId));
                 $row['can_cancel'] = ($peminjamId === $uid
                     && in_array($row['status'], ['menunggu_approval_atasan', 'diajukan', 'disetujui_atasan', 'diverifikasi'], true));
                 $row['can_return'] = ($row['status'] === 'disetujui' && (
@@ -315,14 +337,30 @@ try {
             ok();
 
         case 'verifikasi_pinjam':
-            if (!hasAccess($role, 'inventaris', 'verifikasi')) forbid('Akses ditolak. Hanya Staff Inventaris yang dapat memverifikasi peminjaman.');
+            $viaPengganti = (string)($_POST['pengganti'] ?? '0') === '1';
+            $alasanPengganti = trim($_POST['alasan'] ?? '');
+            if ($viaPengganti) {
+                if (!hasAccess($role, 'inventaris', 'verifikasi_pengganti')) {
+                    forbid('Akses ditolak. Anda tidak memiliki hak akses verifikasi pengganti.');
+                }
+                $lenAlasan = mb_strlen($alasanPengganti, 'UTF-8');
+                if ($lenAlasan < 10 || $lenAlasan > 255) {
+                    fail('Alasan menggantikan wajib diisi antara 10 hingga 255 karakter.');
+                }
+            } else {
+                if (!hasAccess($role, 'inventaris', 'verifikasi')) {
+                    forbid('Akses ditolak. Hanya Staff Inventaris yang dapat memverifikasi peminjaman.');
+                }
+            }
+
             $id = (int)($_POST['id'] ?? 0);
             if ($id < 1) fail('ID peminjaman tidak valid.');
             $setuju = (int)($_POST['setuju'] ?? 1) === 1;
             $catatan = trim($_POST['catatan'] ?? '');
             
             $status = $setuju ? 'diverifikasi' : 'ditolak_staff';
-            if (!$setuju && $catatan === '') fail('Catatan wajib diisi jika menolak.');
+            if (!$setuju && !$viaPengganti && $catatan === '') fail('Catatan wajib diisi jika menolak.');
+            $evalVerif = null;
             
             $conn->begin_transaction();
             try {
@@ -344,41 +382,97 @@ try {
                     fail("Peminjaman #$id tidak dapat diverifikasi karena status saat ini adalah '{$pj['status']}' (harus 'diajukan' atau 'disetujui_atasan').");
                 }
 
-                $stmt = $conn->prepare("UPDATE peminjaman SET status = ?, verifikator_id = ?, catatan = ? WHERE id = ?");
-                $stmt->bind_param("sisi", $status, $user['id'], $catatan, $id);
-                $stmt->execute();
+                if ($viaPengganti) {
+                    $evalVerif = getDetailVerifikasiPengganti($user, 'inventaris', (int)$pj['peminjam_id']);
+                    if (empty($evalVerif['allowed'])) {
+                        $conn->rollback();
+                        fail($evalVerif['msg'], (int)($evalVerif['code'] ?? 403));
+                    }
+                    $catatanFinal = $catatan !== '' ? $catatan : $alasanPengganti;
+                    $stmt = $conn->prepare("UPDATE peminjaman SET status = ?, verifikator_id = ?, catatan = ?, verifikasi_pengganti_oleh = ?, verifikasi_pengganti_alasan = ?, verifikasi_pengganti_pada = NOW() WHERE id = ?");
+                    $stmt->bind_param("sisisi", $status, $user['id'], $catatanFinal, $user['id'], $alasanPengganti, $id);
+                    $stmt->execute();
+                } else {
+                    $stmt = $conn->prepare("UPDATE peminjaman SET status = ?, verifikator_id = ?, catatan = ? WHERE id = ?");
+                    $stmt->bind_param("sisi", $status, $user['id'], $catatan, $id);
+                    $stmt->execute();
+                }
                 $conn->commit();
             } catch (Throwable $e) {
                 $conn->rollback();
                 throw $e;
             }
             
-            logAktivitas($user['id'], 'inventaris', "Verifikasi Staff untuk peminjaman #$id: $status");
-            if ($setuju) {
-                notifyRole('spv_inventaris', 'inventaris', 'Peminjaman #' . $id . ' telah diverifikasi, menunggu approval Anda.', null, [
-                    'kategori' => 'persetujuan',
+            if ($viaPengganti) {
+                $kata = $setuju ? 'memverifikasi' : 'menolak verifikasi';
+                $namaPemohon = $evalVerif['pemohon']['name'] ?? ('User #' . $pj['peminjam_id']);
+                logAktivitas($user['id'], 'inventaris', "Verifikasi sebagai PENGGANTI: {$user['name']} ({$user['nama_role']}) {$kata} peminjaman #$id milik {$namaPemohon} menggantikan Staff Inventaris. Alasan: {$alasanPengganti}");
+                notifyRole('staff_inventaris', 'inventaris', "Peminjaman #$id milik {$namaPemohon} diambil alih verifikasinya ($status) oleh {$user['name']} ({$user['nama_role']}). Alasan: {$alasanPengganti}", null, [
+                    'kategori'  => 'persetujuan',
                     'prioritas' => 'normal',
                     'link_page' => 'inventory',
-                    'link_tab' => 'pinjam'
+                    'link_tab'  => 'pinjam',
                 ]);
+                if ($setuju) {
+                    kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda telah diverifikasi oleh pejabat pengganti ({$user['name']}), menunggu approval SPV Inventaris. Alasan: {$alasanPengganti}", [
+                        'kategori'  => 'persetujuan',
+                        'prioritas' => 'normal',
+                        'link_page' => 'inventory',
+                        'link_tab'  => 'pinjam',
+                    ]);
+                } else {
+                    $infoTolak = $catatan !== '' ? "$catatan (Alasan pengganti: $alasanPengganti)" : $alasanPengganti;
+                    kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda ditolak pada tahap verifikasi oleh pejabat pengganti ({$user['name']}): $infoTolak", [
+                        'kategori'  => 'persetujuan',
+                        'prioritas' => 'normal',
+                        'link_page' => 'inventory',
+                        'link_tab'  => 'pinjam',
+                    ]);
+                }
             } else {
-                kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda ditolak oleh Staff Inventaris: $catatan", [
-                    'kategori' => 'persetujuan',
-                    'prioritas' => 'normal',
-                    'link_page' => 'inventory',
-                    'link_tab' => 'pinjam'
-                ]);
+                logAktivitas($user['id'], 'inventaris', "Verifikasi Staff untuk peminjaman #$id: $status");
+                if ($setuju) {
+                    notifyRole('spv_inventaris', 'inventaris', 'Peminjaman #' . $id . ' telah diverifikasi, menunggu approval Anda.', null, [
+                        'kategori' => 'persetujuan',
+                        'prioritas' => 'normal',
+                        'link_page' => 'inventory',
+                        'link_tab' => 'pinjam'
+                    ]);
+                } else {
+                    kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda ditolak oleh Staff Inventaris: $catatan", [
+                        'kategori' => 'persetujuan',
+                        'prioritas' => 'normal',
+                        'link_page' => 'inventory',
+                        'link_tab' => 'pinjam'
+                    ]);
+                }
             }
             ok();
 
         case 'approve_pinjam':
-            if (!hasAccess($role, 'inventaris', 'approve')) forbid('Akses ditolak. Hanya SPV Inventaris yang dapat menyetujui peminjaman.');
+            $viaPengganti = (string)($_POST['pengganti'] ?? '0') === '1';
+            $alasanPengganti = trim($_POST['alasan'] ?? '');
+            if ($viaPengganti) {
+                if (!hasAccess($role, 'inventaris', 'approve_akhir_pengganti')) {
+                    forbid('Akses ditolak. Anda tidak memiliki hak akses persetujuan akhir pengganti.');
+                }
+                $lenAlasan = mb_strlen($alasanPengganti, 'UTF-8');
+                if ($lenAlasan < 10 || $lenAlasan > 255) {
+                    fail('Alasan menggantikan wajib diisi antara 10 hingga 255 karakter.');
+                }
+            } else {
+                if (!hasAccess($role, 'inventaris', 'approve')) {
+                    forbid('Akses ditolak. Hanya SPV Inventaris yang dapat menyetujui peminjaman.');
+                }
+            }
+
             $id = (int)($_POST['id'] ?? 0);
             if ($id < 1) fail('ID peminjaman tidak valid.');
             $setuju = (int)($_POST['setuju'] ?? 1) === 1;
             $catatan = trim($_POST['catatan'] ?? '');
             
             $status = $setuju ? 'disetujui' : 'ditolak';
+            $evalApp = null;
             
             $conn->begin_transaction();
             try {
@@ -398,6 +492,14 @@ try {
                 if ($pj['status'] !== 'diverifikasi') {
                     $conn->rollback();
                     fail("Peminjaman #$id tidak dapat diproses oleh SPV karena status saat ini adalah '{$pj['status']}' (harus 'diverifikasi').");
+                }
+
+                if ($viaPengganti) {
+                    $evalApp = getDetailApproveAkhirPengganti($user, 'inventaris', (int)$pj['peminjam_id']);
+                    if (empty($evalApp['allowed'])) {
+                        $conn->rollback();
+                        fail($evalApp['msg'], (int)($evalApp['code'] ?? 403));
+                    }
                 }
 
                 if ($setuju) {
@@ -443,9 +545,16 @@ try {
                     $stmtRiw->execute();
                 }
 
-                $stmtUpdPj = $conn->prepare("UPDATE peminjaman SET status = ?, approval_id = ?, catatan = ? WHERE id = ?");
-                $stmtUpdPj->bind_param("sisi", $status, $user['id'], $catatan, $id);
-                $stmtUpdPj->execute();
+                if ($viaPengganti) {
+                    $catatanFinal = $catatan !== '' ? $catatan : $alasanPengganti;
+                    $stmtUpdPj = $conn->prepare("UPDATE peminjaman SET status = ?, approval_id = ?, catatan = ?, approve_akhir_pengganti_oleh = ?, approve_akhir_pengganti_alasan = ?, approve_akhir_pengganti_pada = NOW() WHERE id = ?");
+                    $stmtUpdPj->bind_param("sisisi", $status, $user['id'], $catatanFinal, $user['id'], $alasanPengganti, $id);
+                    $stmtUpdPj->execute();
+                } else {
+                    $stmtUpdPj = $conn->prepare("UPDATE peminjaman SET status = ?, approval_id = ?, catatan = ? WHERE id = ?");
+                    $stmtUpdPj->bind_param("sisi", $status, $user['id'], $catatan, $id);
+                    $stmtUpdPj->execute();
+                }
 
                 $conn->commit();
             } catch (Throwable $e) {
@@ -454,12 +563,29 @@ try {
             }
             
             $keputusan = $setuju ? 'disetujui' : 'ditolak';
-            kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda telah " . str_replace('_', ' ', $status) . ".", [
-                'kategori' => 'persetujuan',
-                'link_page' => 'inventory',
-                'link_tab' => 'pinjam'
-            ]);
-            logAktivitas($user['id'], 'inventaris', "Memberikan approval ($keputusan) untuk peminjaman #$id");
+            if ($viaPengganti) {
+                $kata = $setuju ? 'menyetujui' : 'menolak';
+                $namaPemohon = $evalApp['pemohon']['name'] ?? ('User #' . $pj['peminjam_id']);
+                logAktivitas($user['id'], 'inventaris', "Approve Akhir sebagai PENGGANTI: {$user['name']} ({$user['nama_role']}) {$kata} peminjaman #$id milik {$namaPemohon} menggantikan SPV Inventaris. Alasan: {$alasanPengganti}");
+                notifyRole('spv_inventaris', 'inventaris', "Peminjaman #$id milik {$namaPemohon} diambil alih persetujuan akhirnya ($status) oleh {$user['name']} ({$user['nama_role']}). Alasan: {$alasanPengganti}", null, [
+                    'kategori'  => 'persetujuan',
+                    'prioritas' => 'normal',
+                    'link_page' => 'inventory',
+                    'link_tab'  => 'pinjam',
+                ]);
+                kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda telah " . str_replace('_', ' ', $status) . " oleh pejabat pengganti ({$user['name']}). Alasan: {$alasanPengganti}", [
+                    'kategori'  => 'persetujuan',
+                    'link_page' => 'inventory',
+                    'link_tab'  => 'pinjam',
+                ]);
+            } else {
+                kirimNotifikasi($pj['peminjam_id'], 'inventaris', "Pengajuan peminjaman #$id Anda telah " . str_replace('_', ' ', $status) . ".", [
+                    'kategori' => 'persetujuan',
+                    'link_page' => 'inventory',
+                    'link_tab' => 'pinjam'
+                ]);
+                logAktivitas($user['id'], 'inventaris', "Memberikan approval ($keputusan) untuk peminjaman #$id");
+            }
             ok();
 
         case 'batalkan_pinjam':

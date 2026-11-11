@@ -709,6 +709,182 @@ function bolehApprovePengganti($user, $pemohonId) {
 }
 
 /**
+ * Peta aturan bisnis pejabat pengganti untuk tahap verifikasi modul ('diajukan' / 'disetujui_atasan')
+ * saat petugas verifikator asli berhalangan hadir:
+ * - Inventaris: Staff Inventaris digantikan oleh SPV Inventaris
+ * - Maintenance: Team Leader digantikan oleh SPV Sapras
+ * - Event: Staff CRM digantikan oleh SPV CRM
+ */
+function getPeranPenggantiVerifikator($modul) {
+    $map = [
+        'inventaris' => [
+            'verifikator_role'  => 'staff_inventaris',
+            'verifikator_label' => 'Staff Inventaris',
+            'pengganti_roles'   => ['spv_inventaris'],
+            'next_approve_role' => 'spv_inventaris',
+            'next_approve_label'=> 'SPV Inventaris',
+        ],
+        'maintenance' => [
+            'verifikator_role'  => 'team_leader',
+            'verifikator_label' => 'Team Leader',
+            'pengganti_roles'   => ['spv_sapras'],
+            'next_approve_role' => 'spv_sapras',
+            'next_approve_label'=> 'SPV Sapras',
+        ],
+        'event' => [
+            'verifikator_role'  => 'staff_crm',
+            'verifikator_label' => 'Staff CRM',
+            'pengganti_roles'   => ['spv_crm'],
+            'next_approve_role' => 'spv_crm',
+            'next_approve_label'=> 'SPV CRM',
+        ],
+    ];
+    return $map[(string)$modul] ?? null;
+}
+
+/**
+ * Evaluasi apakah $user berhak memverifikasi pengajuan sebagai pengganti pada $modul untuk $pemohonId.
+ */
+function getDetailVerifikasiPengganti($user, $modul, $pemohonId) {
+    global $conn;
+    if (!$user || empty($user['id']) || empty($user['role'])) {
+        return ['allowed' => false, 'code' => 403, 'msg' => 'Akses ditolak. Pengguna tidak valid.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    $uid = (int)$user['id'];
+    $userRole = (string)$user['role'];
+    $userNamaRole = (string)($user['nama_role'] ?? $userRole);
+    $pemohonId = (int)$pemohonId;
+
+    if ($pemohonId <= 0) {
+        return ['allowed' => false, 'code' => 400, 'msg' => 'Pemohon tidak valid.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    // Anti Self-Approval: pemohon tidak boleh memverifikasi pengajuannya sendiri
+    if ($uid === $pemohonId) {
+        return ['allowed' => false, 'code' => 403, 'msg' => 'Akses ditolak. Pemohon tidak dapat memverifikasi pengajuannya sendiri sebagai pengganti.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    $cfg = getPeranPenggantiVerifikator($modul);
+    if (!$cfg) {
+        return ['allowed' => false, 'code' => 400, 'msg' => 'Modul tidak dikenali.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    if (!hasAccess($userRole, $modul, 'verifikasi_pengganti') || !in_array($userRole, $cfg['pengganti_roles'], true)) {
+        return [
+            'allowed' => false,
+            'code'    => 403,
+            'msg'     => "Akses ditolak. Peran {$userNamaRole} tidak berwenang menggantikan verifikasi {$cfg['verifikator_label']}.",
+            'cfg'     => $cfg,
+            'pemohon' => null,
+        ];
+    }
+
+    $stmtP = $conn->prepare("SELECT u.id, u.name, r.kode AS role_kode, r.nama_role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ? LIMIT 1");
+    $stmtP->bind_param("i", $pemohonId);
+    $stmtP->execute();
+    $pemohon = $stmtP->get_result()->fetch_assoc();
+
+    return [
+        'allowed' => true,
+        'code'    => 200,
+        'msg'     => 'OK',
+        'cfg'     => $cfg,
+        'pemohon' => $pemohon,
+    ];
+}
+
+function bolehVerifikasiPengganti($user, $modul, $pemohonId) {
+    $res = getDetailVerifikasiPengganti($user, $modul, $pemohonId);
+    return !empty($res['allowed']);
+}
+
+/**
+ * Peta aturan bisnis pejabat pengganti untuk tahap approve akhir ('diverifikasi')
+ * saat SPV pengelola berhalangan hadir:
+ * - Inventaris: SPV Inventaris digantikan oleh Manajer GA
+ * - Maintenance: SPV Sapras digantikan oleh Manajer GA
+ * - Event: SPV CRM digantikan oleh Manajer MARKOM
+ */
+function getPeranPenggantiApproveAkhir($modul) {
+    $map = [
+        'inventaris' => [
+            'approver_role'   => 'spv_inventaris',
+            'approver_label'  => 'SPV Inventaris',
+            'pengganti_roles' => ['manajer_ga'],
+        ],
+        'maintenance' => [
+            'approver_role'   => 'spv_sapras',
+            'approver_label'  => 'SPV Sapras',
+            'pengganti_roles' => ['manajer_ga'],
+        ],
+        'event' => [
+            'approver_role'   => 'spv_crm',
+            'approver_label'  => 'SPV CRM',
+            'pengganti_roles' => ['manajer_markom'],
+        ],
+    ];
+    return $map[(string)$modul] ?? null;
+}
+
+/**
+ * Evaluasi apakah $user berhak melakukan approve akhir sebagai pengganti pada $modul untuk $pemohonId.
+ */
+function getDetailApproveAkhirPengganti($user, $modul, $pemohonId) {
+    global $conn;
+    if (!$user || empty($user['id']) || empty($user['role'])) {
+        return ['allowed' => false, 'code' => 403, 'msg' => 'Akses ditolak. Pengguna tidak valid.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    $uid = (int)$user['id'];
+    $userRole = (string)$user['role'];
+    $userNamaRole = (string)($user['nama_role'] ?? $userRole);
+    $pemohonId = (int)$pemohonId;
+
+    if ($pemohonId <= 0) {
+        return ['allowed' => false, 'code' => 400, 'msg' => 'Pemohon tidak valid.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    // Anti Self-Approval: pemohon tidak boleh menyetujui pengajuannya sendiri
+    if ($uid === $pemohonId) {
+        return ['allowed' => false, 'code' => 403, 'msg' => 'Akses ditolak. Pemohon tidak dapat menyetujui pengajuannya sendiri sebagai pengganti.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    $cfg = getPeranPenggantiApproveAkhir($modul);
+    if (!$cfg) {
+        return ['allowed' => false, 'code' => 400, 'msg' => 'Modul tidak dikenali.', 'cfg' => null, 'pemohon' => null];
+    }
+
+    if (!hasAccess($userRole, $modul, 'approve_akhir_pengganti') || !in_array($userRole, $cfg['pengganti_roles'], true)) {
+        return [
+            'allowed' => false,
+            'code'    => 403,
+            'msg'     => "Akses ditolak. Peran {$userNamaRole} tidak berwenang menggantikan persetujuan akhir {$cfg['approver_label']}.",
+            'cfg'     => $cfg,
+            'pemohon' => null,
+        ];
+    }
+
+    $stmtP = $conn->prepare("SELECT u.id, u.name, r.kode AS role_kode, r.nama_role FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ? LIMIT 1");
+    $stmtP->bind_param("i", $pemohonId);
+    $stmtP->execute();
+    $pemohon = $stmtP->get_result()->fetch_assoc();
+
+    return [
+        'allowed' => true,
+        'code'    => 200,
+        'msg'     => 'OK',
+        'cfg'     => $cfg,
+        'pemohon' => $pemohon,
+    ];
+}
+
+function bolehApproveAkhirPengganti($user, $modul, $pemohonId) {
+    $res = getDetailApproveAkhirPengganti($user, $modul, $pemohonId);
+    return !empty($res['allowed']);
+}
+
+/**
  * Fungsi bersama untuk memproses approve_atasan (jalur normal maupun jalur pengganti)
  * pada modul 'inventaris', 'maintenance', dan 'event' di dalam transaksi SELECT ... FOR UPDATE.
  */
@@ -744,7 +920,7 @@ function prosesApproveAtasanModul($conn, $modul, $id, $user, $setuju, $catatanAt
             'table'       => 'event',
             'pemohon_col' => 'pemohon_id',
             'jenis_label' => 'event',
-            'next_role'   => 'spv_crm',
+            'next_role'   => 'staff_crm',
             'link_page'   => 'event',
             'link_tab'    => 'pengajuan',
         ],
@@ -920,14 +1096,14 @@ function prosesApproveAtasanModul($conn, $modul, $id, $user, $setuju, $catatanAt
     } elseif ($modul === 'event') {
         $namaEv = $row['nama_event'] ?? ('#' . $id);
         if ($setuju) {
-            notifyRole('spv_crm', 'event', "Pengajuan event \"{$namaEv}\" telah disetujui atasan, mohon diverifikasi.", null, [
+            notifyRole('staff_crm', 'event', "Pengajuan event \"{$namaEv}\" telah disetujui atasan, mohon diverifikasi.", null, [
                 'kategori'  => 'persetujuan',
                 'link_page' => 'event',
                 'link_tab'  => 'pengajuan',
             ]);
             $msgPemohon = $viaPengganti
-                ? "Pengajuan event Anda (\"{$namaEv}\") disetujui oleh pejabat pengganti ({$user['name']}), diteruskan ke SPV CRM. Alasan: {$alasan}"
-                : "Pengajuan event Anda (\"{$namaEv}\") disetujui atasan, diteruskan ke SPV CRM.";
+                ? "Pengajuan event Anda (\"{$namaEv}\") disetujui oleh pejabat pengganti ({$user['name']}), diteruskan ke Staff CRM. Alasan: {$alasan}"
+                : "Pengajuan event Anda (\"{$namaEv}\") disetujui atasan, diteruskan ke Staff CRM.";
             kirimNotifikasi($pemohonId, 'event', $msgPemohon, [
                 'kategori'  => 'persetujuan',
                 'link_page' => 'event',
@@ -1576,6 +1752,121 @@ function evaluateLazyReminders($userId) {
 
     // 3. Pengingat tugas kegiatan karyawan (H-1 / Hari-H / Terlambat)
     triggerReminderKegiatan($userId, false);
+
+    // 4. PENGINGAT LONCENG OTOMATIS 24 JAM (1 HARI): Pengajuan Belum Diverifikasi -> Eskalasi ke SPV Terkait
+    // a) Inventaris -> SPV Inventaris
+    $resEscInv = $conn->query("
+        SELECT p.id, p.keperluan, b.nama_barang, DATE(p.created_at) AS tgl_ajuan
+        FROM peminjaman p
+        JOIN barang b ON b.id = p.barang_id
+        WHERE p.status IN ('diajukan', 'disetujui_atasan')
+          AND TIMESTAMPDIFF(HOUR, p.created_at, NOW()) >= 24
+    ");
+    if ($resEscInv) {
+        $spvInvIds = getUserIdsByRole('spv_inventaris');
+        while ($rowEsc = $resEscInv->fetch_assoc()) {
+            $escId = (int)$rowEsc['id'];
+            $namaB = mb_substr($rowEsc['nama_barang'] ?? 'Barang', 0, 35);
+            $tglAjuan = $rowEsc['tgl_ajuan'] ?: $today;
+            foreach ($spvInvIds as $spvUid) {
+                $logEsc = $conn->prepare("INSERT IGNORE INTO reminder_log (user_id, jenis, ref_id, tanggal) VALUES (?, 'eskalasi_verif_inv', ?, ?)");
+                if ($logEsc) {
+                    $logEsc->bind_param("iis", $spvUid, $escId, $tglAjuan);
+                    $logEsc->execute();
+                    if ($logEsc->affected_rows > 0) {
+                        kirimNotifikasi(
+                            $spvUid,
+                            'inventaris',
+                            "Pengingat 24 Jam: Peminjaman #$escId ($namaB) belum diverifikasi Staff Inventaris lebih dari 24 jam. Anda dapat memverifikasi sebagai pengganti bila petugas berhalangan.",
+                            [
+                                'kategori'  => 'pengingat',
+                                'prioritas' => 'normal',
+                                'link_page' => 'inventory',
+                                'link_tab'  => 'pinjam',
+                            ]
+                        );
+                        $sentCount++;
+                    }
+                }
+            }
+        }
+    }
+
+    // b) Maintenance -> SPV Sapras
+    $resEscMaint = $conn->query("
+        SELECT pm.id, pm.deskripsi_kerusakan, pm.prioritas, DATE(pm.created_at) AS tgl_ajuan
+        FROM pengajuan_maintenance pm
+        WHERE pm.status IN ('diajukan', 'disetujui_atasan')
+          AND TIMESTAMPDIFF(HOUR, pm.created_at, NOW()) >= 24
+    ");
+    if ($resEscMaint) {
+        $spvSaprasIds = getUserIdsByRole('spv_sapras');
+        while ($rowEsc = $resEscMaint->fetch_assoc()) {
+            $escId = (int)$rowEsc['id'];
+            $descShort = mb_substr($rowEsc['deskripsi_kerusakan'] ?? 'Maintenance', 0, 35);
+            $prioEsc = ($rowEsc['prioritas'] ?? 'normal') === 'darurat' ? 'darurat' : 'normal';
+            $tglAjuan = $rowEsc['tgl_ajuan'] ?: $today;
+            foreach ($spvSaprasIds as $spvUid) {
+                $logEsc = $conn->prepare("INSERT IGNORE INTO reminder_log (user_id, jenis, ref_id, tanggal) VALUES (?, 'eskalasi_verif_maint', ?, ?)");
+                if ($logEsc) {
+                    $logEsc->bind_param("iis", $spvUid, $escId, $tglAjuan);
+                    $logEsc->execute();
+                    if ($logEsc->affected_rows > 0) {
+                        kirimNotifikasi(
+                            $spvUid,
+                            'maintenance',
+                            "Pengingat 24 Jam: Pengajuan maintenance #$escId ($descShort) belum diverifikasi Team Leader lebih dari 24 jam. Anda dapat memverifikasi sebagai pengganti bila petugas berhalangan.",
+                            [
+                                'kategori'  => 'pengingat',
+                                'prioritas' => $prioEsc,
+                                'link_page' => 'maintenance',
+                                'link_tab'  => 'pengajuan',
+                            ]
+                        );
+                        $sentCount++;
+                    }
+                }
+            }
+        }
+    }
+
+    // c) Event -> SPV CRM
+    $resEscEv = $conn->query("
+        SELECT e.id, e.nama_event, DATE(e.created_at) AS tgl_ajuan
+        FROM event e
+        WHERE e.status IN ('diajukan', 'disetujui_atasan')
+          AND TIMESTAMPDIFF(HOUR, e.created_at, NOW()) >= 24
+    ");
+    if ($resEscEv) {
+        $spvCrmIds = getUserIdsByRole('spv_crm');
+        while ($rowEsc = $resEscEv->fetch_assoc()) {
+            $escId = (int)$rowEsc['id'];
+            $namaEv = mb_substr($rowEsc['nama_event'] ?? 'Event', 0, 35);
+            $tglAjuan = $rowEsc['tgl_ajuan'] ?: $today;
+            foreach ($spvCrmIds as $spvUid) {
+                $logEsc = $conn->prepare("INSERT IGNORE INTO reminder_log (user_id, jenis, ref_id, tanggal) VALUES (?, 'eskalasi_verif_event', ?, ?)");
+                if ($logEsc) {
+                    $logEsc->bind_param("iis", $spvUid, $escId, $tglAjuan);
+                    $logEsc->execute();
+                    if ($logEsc->affected_rows > 0) {
+                        kirimNotifikasi(
+                            $spvUid,
+                            'event',
+                            "Pengingat 24 Jam: Pengajuan event \"$namaEv\" (#$escId) belum diverifikasi Staff CRM lebih dari 24 jam. Anda dapat memverifikasi sebagai pengganti bila petugas berhalangan.",
+                            [
+                                'kategori'  => 'pengingat',
+                                'prioritas' => 'normal',
+                                'link_page' => 'event',
+                                'link_tab'  => 'pengajuan',
+                            ]
+                        );
+                        $sentCount++;
+                    }
+                }
+            }
+        }
+    }
+
     return $sentCount;
 }
 

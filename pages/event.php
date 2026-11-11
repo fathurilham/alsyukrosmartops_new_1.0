@@ -1,7 +1,9 @@
 <?php
 $canAjukan = hasAccess($role, 'event', 'ajukan');
 $canVerifikasi = hasAccess($role, 'event', 'verifikasi');
+$canVerifikasiPengganti = hasAccess($role, 'event', 'verifikasi_pengganti');
 $canApprove = hasAccess($role, 'event', 'approve');
+$canApproveAkhirPengganti = hasAccess($role, 'event', 'approve_akhir_pengganti');
 $canApproveAtasan = hasAccess($role, 'event', 'approve_atasan');
 $canApprovePengganti = hasAccess($role, 'event', 'approve_pengganti');
 $canKelola = hasAccess($role, 'event', 'kelola');
@@ -16,7 +18,7 @@ $totalMenunggu = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('di
 
 <div class="card">
     <div class="card-head">
-        <div><h2>Event Management System</h2><p>Alur: Pengajuan → Persetujuan Atasan Unit Pengaju → Verifikasi (SPV CRM) → Approval (Manajer MARKOM). Sistem mencegah benturan jadwal otomatis.</p></div>
+        <div><h2>Event Management System</h2><p>Alur: Pengajuan → Persetujuan Atasan Unit Pengaju → Verifikasi (Staff CRM) → Approval (SPV CRM). Sistem mencegah benturan jadwal otomatis.</p></div>
         <div class="hgroup">
             <div id="toolbarEvent"></div>
             <?php if ($canAjukan): ?>
@@ -76,10 +78,11 @@ $totalMenunggu = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('di
         <div class="modal-body">
             <input type="hidden" id="pgEventId">
             <input type="hidden" id="pgEventSetuju">
-            <p style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan event ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.</p>
+            <input type="hidden" id="pgEventAction" value="approve_atasan">
+            <p id="pgEventDesc" style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan event ini menggantikan pejabat yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke pejabat asli.</p>
             <div class="fld">
                 <label>Alasan Menggantikan <span style="color:var(--danger)">*</span> <small style="color:var(--muted);font-weight:400">(10–255 karakter)</small></label>
-                <textarea id="pgEventAlasan" rows="3" maxlength="255" placeholder="Contoh: Kepala Sekolah sedang tugas luar sekolah..."></textarea>
+                <textarea id="pgEventAlasan" rows="3" maxlength="255" placeholder="Contoh: Petugas yang bersangkutan sedang izin / tugas luar..."></textarea>
             </div>
             <div class="fld" id="pgEventCatatanWrap" style="display:none">
                 <label>Catatan Penolakan (Opsional)</label>
@@ -95,7 +98,9 @@ $totalMenunggu = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('di
 
 <script>
 const E_VERIFIKASI = <?= $canVerifikasi ? 'true' : 'false' ?>;
+const E_VERIFIKASI_PENGGANTI = <?= $canVerifikasiPengganti ? 'true' : 'false' ?>;
 const E_APPROVE = <?= $canApprove ? 'true' : 'false' ?>;
+const E_APPROVE_AKHIR_PENGGANTI = <?= $canApproveAkhirPengganti ? 'true' : 'false' ?>;
 const E_APPROVE_ATASAN = <?= $canApproveAtasan ? 'true' : 'false' ?>;
 const E_APPROVE_PENGGANTI = <?= $canApprovePengganti ? 'true' : 'false' ?>;
 const E_KELOLA = <?= $canKelola ? 'true' : 'false' ?>;
@@ -129,9 +134,11 @@ async function loadEvent() {
     if (document.getElementById('eventBody')) updateDOM('eventBody', r.data.length ? r.data.map(e => {
         let aksi = '';
         if (e.status === 'menunggu_approval_atasan' && E_APPROVE_ATASAN && e.can_approve_atasan) aksi = pairAtasanE('approve_atasan', e.id);
-        else if (e.status === 'menunggu_approval_atasan' && E_APPROVE_PENGGANTI && e.can_approve_pengganti) aksi = pairPenggantiE(e.id);
-        else if ((e.status === 'diajukan' || e.status === 'disetujui_atasan') && E_VERIFIKASI) aksi = pairE('verifikasi', e.id, 'valid');
-        else if (e.status === 'diverifikasi' && E_APPROVE) aksi = pairE('approve', e.id, 'setuju');
+        else if (e.status === 'menunggu_approval_atasan' && E_APPROVE_PENGGANTI && e.can_approve_pengganti) aksi = pairPenggantiE(e.id, 'approve_atasan', 'Setujui');
+        else if ((e.status === 'diajukan' || e.status === 'disetujui_atasan') && E_VERIFIKASI && e.can_verifikasi) aksi = pairE('verifikasi', e.id, 'valid');
+        else if ((e.status === 'diajukan' || e.status === 'disetujui_atasan') && E_VERIFIKASI_PENGGANTI && e.can_verifikasi_pengganti) aksi = pairPenggantiE(e.id, 'verifikasi', 'Verifikasi');
+        else if (e.status === 'diverifikasi' && E_APPROVE && e.can_approve_akhir) aksi = pairE('approve', e.id, 'setuju');
+        else if (e.status === 'diverifikasi' && E_APPROVE_AKHIR_PENGGANTI && e.can_approve_akhir_pengganti) aksi = pairPenggantiE(e.id, 'approve', 'Approve');
         else if (e.status === 'disetujui' && (E_KELOLA || E_VERIFIKASI)) aksi = `<button class="btn btn-outline btn-sm" onclick="setStatus(${e.id},'berlangsung')">Mulai</button>`;
         else if (e.status === 'berlangsung' && (E_KELOLA || E_VERIFIKASI)) aksi = `<button class="btn btn-primary btn-sm" onclick="setStatus(${e.id},'selesai')">Selesaikan</button>`;
         else if (e.status.includes('ditolak')) aksi = '<i data-lucide="x" style="color:var(--danger);width:20px;height:20px;margin-top:4px"></i>';
@@ -143,7 +150,13 @@ async function loadEvent() {
         }
         let descHtml = `<div>${esc(e.deskripsi)||'-'}</div>`;
         if (e.approval_pengganti_oleh) {
-            descHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Diputuskan oleh pengganti: <b>${esc(e.pengganti_nama || '-')}</b> — ${esc(e.approval_pengganti_alasan || '-')}</div>`;
+            descHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Disetujui Atasan (Pengganti): <b>${esc(e.pengganti_nama || '-')}</b> — ${esc(e.approval_pengganti_alasan || '-')}</div>`;
+        }
+        if (e.verifikasi_pengganti_oleh) {
+            descHtml += `<div style="font-size:11.5px;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:4px;padding:3px 6px;margin-top:4px">Diverifikasi Pengganti: <b>${esc(e.verifikasi_pengganti_nama || '-')}</b> — ${esc(e.verifikasi_pengganti_alasan || '-')}</div>`;
+        }
+        if (e.approve_akhir_pengganti_oleh) {
+            descHtml += `<div style="font-size:11.5px;color:#065f46;background:#d1fae5;border:1px solid #a7f3d0;border-radius:4px;padding:3px 6px;margin-top:4px">Approve Akhir Pengganti: <b>${esc(e.approve_akhir_pengganti_nama || '-')}</b> — ${esc(e.approve_akhir_pengganti_alasan || '-')}</div>`;
         }
         return `<tr><td>${esc(e.nama_event)}</td><td>${descHtml}</td><td>${e.tanggal||'-'} ${e.jam_mulai||''}-${e.jam_selesai||''}</td><td>${esc(e.lokasi)||'-'}</td><td>${esc(e.pemohon_nama)}</td>
         <td><span class="badge ${eBadge[e.status]}">${eLabel[e.status]}</span></td><td>${dok}</td><td class="actions-cell no-print">${aksi}</td></tr>`;
@@ -164,29 +177,41 @@ function pairAtasanE(action, id) {
     return `<button class="btn btn-primary btn-sm" onclick="prosesAtasanE('${action}',${id},1)">Setuju</button>
             <button class="btn btn-danger btn-sm" onclick="prosesAtasanE('${action}',${id},0)">Tolak</button>`;
 }
-function pairPenggantiE(id) {
-    return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiEvent(${id},1)">Setujui sbg Pengganti</button>
-            <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiEvent(${id},0)">Tolak sbg Pengganti</button>`;
+function pairPenggantiE(id, action = 'approve_atasan', label = 'Setujui') {
+    return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiEvent(${id},1,'${action}','${label}')">${label} sbg Pengganti</button>
+            <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiEvent(${id},0,'${action}','${label}')">Tolak sbg Pengganti</button>`;
 }
-function bukaModalPenggantiEvent(id, setuju) {
+function bukaModalPenggantiEvent(id, setuju, action = 'approve_atasan', label = 'Setujui') {
     document.getElementById('pgEventId').value = id;
     document.getElementById('pgEventSetuju').value = setuju ? '1' : '0';
+    document.getElementById('pgEventAction').value = action;
     document.getElementById('pgEventAlasan').value = '';
     document.getElementById('pgEventCatatan').value = '';
     document.getElementById('pgEventCatatanWrap').style.display = setuju ? 'none' : 'block';
+    const descEl = document.getElementById('pgEventDesc');
+    if (descEl) {
+        if (action === 'verifikasi') {
+            descEl.textContent = 'Anda akan memverifikasi pengajuan event ini sebagai pengganti Staff CRM yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke Staff CRM.';
+        } else if (action === 'approve') {
+            descEl.textContent = 'Anda akan memberikan persetujuan akhir pengajuan event ini sebagai pengganti SPV CRM yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke SPV CRM.';
+        } else {
+            descEl.textContent = 'Anda akan memproses pengajuan event ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.';
+        }
+    }
     document.getElementById('modalPenggantiEventTitle').textContent = setuju
-        ? 'Setujui sebagai Pengganti'
-        : 'Tolak sebagai Pengganti';
+        ? `${label} sebagai Pengganti`
+        : `Tolak (${label}) sebagai Pengganti`;
     const btn = document.getElementById('btnSubmitPenggantiEvent');
     if (btn) {
         btn.className = setuju ? 'btn btn-primary' : 'btn btn-danger';
-        btn.textContent = setuju ? 'Setujui sebagai Pengganti' : 'Tolak sebagai Pengganti';
+        btn.textContent = setuju ? `${label} sebagai Pengganti` : 'Tolak sebagai Pengganti';
     }
     openModal('modalPenggantiEvent');
 }
 async function submitApprovePenggantiEvent(btn) {
     const id = document.getElementById('pgEventId').value;
     const setuju = document.getElementById('pgEventSetuju').value;
+    const action = document.getElementById('pgEventAction').value || 'approve_atasan';
     const alasan = document.getElementById('pgEventAlasan').value.trim();
     const catatan = document.getElementById('pgEventCatatan').value.trim();
     if (alasan.length < 10) {
@@ -197,11 +222,13 @@ async function submitApprovePenggantiEvent(btn) {
     }
     if (btn) btn.disabled = true;
     try {
-        const r = await apiFetch('event', 'approve_atasan', {
+        const r = await apiFetch('event', action, {
             id,
             setuju,
+            valid: setuju,
             pengganti: 1,
             alasan,
+            catatan: catatan,
             catatan_atasan: catatan
         });
         if (r.ok) {

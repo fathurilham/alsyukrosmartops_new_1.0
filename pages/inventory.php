@@ -3,7 +3,9 @@
     $canTambah = hasAccess($role, 'inventaris', 'tambah');
     $canKelola = hasAccess($role, 'inventaris', 'kelola');
     $canVerifikasi = hasAccess($role, 'inventaris', 'verifikasi');
+    $canVerifikasiPengganti = hasAccess($role, 'inventaris', 'verifikasi_pengganti');
     $canApprove = hasAccess($role, 'inventaris', 'approve');
+    $canApproveAkhirPengganti = hasAccess($role, 'inventaris', 'approve_akhir_pengganti');
     $canApproveAtasan = hasAccess($role, 'inventaris', 'approve_atasan');
     $canApprovePengganti = hasAccess($role, 'inventaris', 'approve_pengganti');
     $canMonitoring = hasAccess($role, 'inventaris', 'monitoring');
@@ -240,10 +242,11 @@
             <div class="modal-body">
                 <input type="hidden" id="pgInvId">
                 <input type="hidden" id="pgInvSetuju">
-                <p style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.</p>
+                <input type="hidden" id="pgInvAction" value="approve_atasan">
+                <p id="pgInvDesc" style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan ini menggantikan pejabat yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke pejabat asli.</p>
                 <div class="fld">
                     <label>Alasan Menggantikan <span style="color:var(--danger)">*</span> <small style="color:var(--muted);font-weight:400">(10–255 karakter)</small></label>
-                    <textarea id="pgInvAlasan" rows="3" maxlength="255" placeholder="Contoh: Kepala Sekolah SD sedang dinas luar kota hari ini..."></textarea>
+                    <textarea id="pgInvAlasan" rows="3" maxlength="255" placeholder="Contoh: Petugas yang bersangkutan sedang izin / sakit hari ini..."></textarea>
                 </div>
                 <div class="fld" id="pgInvCatatanWrap" style="display:none">
                     <label>Catatan Penolakan (Opsional)</label>
@@ -259,7 +262,9 @@
 
     <script>
     const CAN_VERIFIKASI = <?= $canVerifikasi ? 'true' : 'false' ?>;
+    const CAN_VERIFIKASI_PENGGANTI = <?= $canVerifikasiPengganti ? 'true' : 'false' ?>;
     const CAN_APPROVE = <?= $canApprove ? 'true' : 'false' ?>;
+    const CAN_APPROVE_AKHIR_PENGGANTI = <?= $canApproveAkhirPengganti ? 'true' : 'false' ?>;
     const CAN_APPROVE_ATASAN = <?= $canApproveAtasan ? 'true' : 'false' ?>;
     const CAN_APPROVE_PENGGANTI = <?= $canApprovePengganti ? 'true' : 'false' ?>;
     const CAN_KELOLA = <?= $canKelola ? 'true' : 'false' ?>;
@@ -415,11 +420,15 @@
             if (p.status === 'menunggu_approval_atasan' && CAN_APPROVE_ATASAN && p.can_approve_atasan) {
                 aksiParts.push(btnPairAtasan('approve_atasan', p.id));
             } else if (p.status === 'menunggu_approval_atasan' && CAN_APPROVE_PENGGANTI && p.can_approve_pengganti) {
-                aksiParts.push(btnPairPenggantiInv(p.id));
-            } else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && CAN_VERIFIKASI) {
+                aksiParts.push(btnPairPenggantiInv(p.id, 'approve_atasan', 'Setujui'));
+            } else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && CAN_VERIFIKASI && p.can_verifikasi) {
                 aksiParts.push(btnPair('verifikasi_pinjam', p.id));
-            } else if (p.status === 'diverifikasi' && CAN_APPROVE) {
+            } else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && CAN_VERIFIKASI_PENGGANTI && p.can_verifikasi_pengganti) {
+                aksiParts.push(btnPairPenggantiInv(p.id, 'verifikasi_pinjam', 'Verifikasi'));
+            } else if (p.status === 'diverifikasi' && CAN_APPROVE && p.can_approve_akhir) {
                 aksiParts.push(btnPair('approve_pinjam', p.id));
+            } else if (p.status === 'diverifikasi' && CAN_APPROVE_AKHIR_PENGGANTI && p.can_approve_akhir_pengganti) {
+                aksiParts.push(btnPairPenggantiInv(p.id, 'approve_pinjam', 'Approve'));
             }
 
             if (p.can_cancel || (Number(p.peminjam_id) === CURRENT_USER_ID && ['menunggu_approval_atasan', 'diajukan', 'disetujui_atasan', 'diverifikasi'].includes(p.status))) {
@@ -438,7 +447,13 @@
             }
             let keperluanHtml = `<div>${esc(p.keperluan)||'-'}</div>`;
             if (p.approval_pengganti_oleh) {
-                keperluanHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Diputuskan oleh pengganti: <b>${esc(p.pengganti_nama || '-')}</b> — ${esc(p.approval_pengganti_alasan || '-')}</div>`;
+                keperluanHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Disetujui Atasan (Pengganti): <b>${esc(p.pengganti_nama || '-')}</b> — ${esc(p.approval_pengganti_alasan || '-')}</div>`;
+            }
+            if (p.verifikasi_pengganti_oleh) {
+                keperluanHtml += `<div style="font-size:11.5px;color:#1e40af;background:#dbeafe;border:1px solid #bfdbfe;border-radius:4px;padding:3px 6px;margin-top:4px">Diverifikasi Pengganti: <b>${esc(p.verifikasi_pengganti_nama || '-')}</b> — ${esc(p.verifikasi_pengganti_alasan || '-')}</div>`;
+            }
+            if (p.approve_akhir_pengganti_oleh) {
+                keperluanHtml += `<div style="font-size:11.5px;color:#065f46;background:#d1fae5;border:1px solid #a7f3d0;border-radius:4px;padding:3px 6px;margin-top:4px">Approve Akhir Pengganti: <b>${esc(p.approve_akhir_pengganti_nama || '-')}</b> — ${esc(p.approve_akhir_pengganti_alasan || '-')}</div>`;
             }
             return `<tr><td>${esc(p.nama_barang)}</td><td>${p.jumlah}</td><td><div>${esc(p.peminjam_nama)}</div><div style="font-size:12px;color:var(--muted)">${esc(p.peminjam_jabatan) || '-'}</div></td><td>${p.tanggal_pinjam}</td><td>${p.rencana_kembali||'-'}</td><td>${keperluanHtml}</td>
             <td><span class="badge ${statusBadge[p.status] || 'b-gray'}">${statusLabel[p.status] || esc(p.status)}</span></td><td class="actions-cell no-print">${aksi}</td></tr>`;
@@ -486,29 +501,41 @@
         return `<button class="btn btn-primary btn-sm" onclick="prosesPinjamAtasan('${action}',${id},1,this)">Setuju</button>
                 <button class="btn btn-danger btn-sm" onclick="prosesPinjamAtasan('${action}',${id},0,this)">Tolak</button>`;
     }
-    function btnPairPenggantiInv(id) {
-        return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiInv(${id},1)">Setujui sbg Pengganti</button>
-                <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiInv(${id},0)">Tolak sbg Pengganti</button>`;
+    function btnPairPenggantiInv(id, action = 'approve_atasan', label = 'Setujui') {
+        return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiInv(${id},1,'${action}','${label}')">${label} sbg Pengganti</button>
+                <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiInv(${id},0,'${action}','${label}')">Tolak sbg Pengganti</button>`;
     }
-    function bukaModalPenggantiInv(id, setuju) {
+    function bukaModalPenggantiInv(id, setuju, action = 'approve_atasan', label = 'Setujui') {
         document.getElementById('pgInvId').value = id;
         document.getElementById('pgInvSetuju').value = setuju ? '1' : '0';
+        document.getElementById('pgInvAction').value = action;
         document.getElementById('pgInvAlasan').value = '';
         document.getElementById('pgInvCatatan').value = '';
         document.getElementById('pgInvCatatanWrap').style.display = setuju ? 'none' : 'block';
+        const descEl = document.getElementById('pgInvDesc');
+        if (descEl) {
+            if (action === 'verifikasi_pinjam') {
+                descEl.textContent = 'Anda akan memverifikasi peminjaman ini sebagai pengganti Staff Inventaris yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke petugas asli.';
+            } else if (action === 'approve_pinjam') {
+                descEl.textContent = 'Anda akan memberikan persetujuan akhir peminjaman ini sebagai pengganti SPV Inventaris yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke SPV asli.';
+            } else {
+                descEl.textContent = 'Anda akan memproses pengajuan ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.';
+            }
+        }
         document.getElementById('modalPenggantiInvTitle').textContent = setuju
-            ? 'Setujui sebagai Pengganti'
-            : 'Tolak sebagai Pengganti';
+            ? `${label} sebagai Pengganti`
+            : `Tolak (${label}) sebagai Pengganti`;
         const btn = document.getElementById('btnSubmitPenggantiInv');
         if (btn) {
             btn.className = setuju ? 'btn btn-primary' : 'btn btn-danger';
-            btn.textContent = setuju ? 'Setujui sebagai Pengganti' : 'Tolak sebagai Pengganti';
+            btn.textContent = setuju ? `${label} sebagai Pengganti` : 'Tolak sebagai Pengganti';
         }
         openModal('modalPenggantiInv');
     }
     async function submitApprovePenggantiInv(btn) {
         const id = document.getElementById('pgInvId').value;
         const setuju = document.getElementById('pgInvSetuju').value;
+        const action = document.getElementById('pgInvAction').value || 'approve_atasan';
         const alasan = document.getElementById('pgInvAlasan').value.trim();
         const catatan = document.getElementById('pgInvCatatan').value.trim();
         if (alasan.length < 10) {
@@ -519,11 +546,12 @@
         }
         if (btn) btn.disabled = true;
         try {
-            const r = await apiFetch('inventaris', 'approve_atasan', {
+            const r = await apiFetch('inventaris', action, {
                 id,
                 setuju,
                 pengganti: 1,
                 alasan,
+                catatan: catatan,
                 catatan_atasan: catatan
             });
             if (r.ok) {

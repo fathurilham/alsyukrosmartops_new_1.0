@@ -819,5 +819,78 @@ SET k.atasan_id = (
 )
 WHERE r.kode = 'engineering';
 
+-- ═══════════════════════════════════════════════════════════════════
+-- R. FASE 3 — PENYELARASAN ALUR EVENT + VERIFIKASI & APPROVE AKHIR SEBAGAI PENGGANTI + REMINDER 24 JAM (IDEMPOTENT)
+-- ═══════════════════════════════════════════════════════════════════
+
+-- 1. Pastikan pengajuan_maintenance memiliki kolom created_at untuk perhitungan eskalasi 24 jam
+ALTER TABLE `pengajuan_maintenance`
+  ADD COLUMN IF NOT EXISTS `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+-- 2. Tambahkan kolom audit Verifikasi Pengganti & Approve Akhir Pengganti pada peminjaman, pengajuan_maintenance, dan event
+ALTER TABLE `peminjaman`
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_oleh` INT NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_alasan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_pada` DATETIME NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_oleh` INT NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_alasan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_pada` DATETIME NULL DEFAULT NULL;
+
+ALTER TABLE `pengajuan_maintenance`
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_oleh` INT NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_alasan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_pada` DATETIME NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_oleh` INT NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_alasan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_pada` DATETIME NULL DEFAULT NULL;
+
+ALTER TABLE `event`
+  ADD COLUMN IF NOT EXISTS `catatan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_oleh` INT NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_alasan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `verifikasi_pengganti_pada` DATETIME NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_oleh` INT NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_alasan` VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS `approve_akhir_pengganti_pada` DATETIME NULL DEFAULT NULL;
+
+-- 3. Ubah Alur Pengelola Event: Verifikasi oleh Staff CRM (staff_crm), Approve Akhir oleh SPV CRM (spv_crm)
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'event', 'verifikasi' FROM `roles` WHERE `kode` = 'staff_crm';
+
+DELETE h FROM `hak_akses` h
+JOIN `roles` r ON r.id = h.role_id
+WHERE r.kode = 'spv_crm' AND h.modul = 'event' AND h.aksi = 'verifikasi';
+
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'event', 'approve' FROM `roles` WHERE `kode` = 'spv_crm';
+
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'event', 'kelola' FROM `roles` WHERE `kode` = 'spv_crm';
+
+DELETE h FROM `hak_akses` h
+JOIN `roles` r ON r.id = h.role_id
+WHERE r.kode = 'manajer_markom' AND h.modul = 'event' AND h.aksi = 'approve';
+
+-- 4. Hak akses Verifikasi sebagai Pengganti (verifikasi_pengganti)
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'inventaris', 'verifikasi_pengganti' FROM `roles` WHERE `kode` = 'spv_inventaris';
+
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'maintenance', 'verifikasi_pengganti' FROM `roles` WHERE `kode` = 'spv_sapras';
+
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'event', 'verifikasi_pengganti' FROM `roles` WHERE `kode` = 'spv_crm';
+
+-- 5. Hak akses Approve Akhir sebagai Pengganti (approve_akhir_pengganti)
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'inventaris', 'approve_akhir_pengganti' FROM `roles` WHERE `kode` = 'manajer_ga';
+
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'maintenance', 'approve_akhir_pengganti' FROM `roles` WHERE `kode` = 'manajer_ga';
+
+INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
+SELECT `id`, 'event', 'approve_akhir_pengganti' FROM `roles` WHERE `kode` = 'manajer_markom';
+
+
 
 
