@@ -1,4 +1,6 @@
 <?php
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 require_once 'config/auth.php';
 if (isLoggedIn()) { header('Location: dashboard.php'); exit(); }
 $error = '';
@@ -36,11 +38,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 if ($found) {
-                    resetFailedLogin($found['id']);
                     session_regenerate_id(true);
-                    $_SESSION['user_id'] = $found['id'];
-                    logAktivitas($found['id'], 'auth', 'Login ke sistem');
-                    header('Location: dashboard.php'); exit();
+                    $newSid = session_id();
+                    if (!claimUserSession($found['id'], $newSid, getClientIp(), $_SERVER['HTTP_USER_AGENT'] ?? '')) {
+                        logAktivitas($found['id'], 'auth', 'Login ditolak: akun sedang aktif di perangkat lain');
+                        $error = 'Akun ini sedang digunakan di perangkat lain. Silakan logout dari perangkat tersebut atau tunggu hingga sesi berakhir.';
+                    } else {
+                        resetFailedLogin($found['id']);
+                        $_SESSION['user_id'] = $found['id'];
+                        $_SESSION['last_activity'] = time();
+                        $_SESSION['db_last_touch'] = time();
+                        logAktivitas($found['id'], 'auth', 'Login ke sistem');
+                        header('Location: dashboard.php'); exit();
+                    }
                 } elseif (!$error) {
                     if ($candidate) {
                         registerFailedLogin($candidate['id']);
@@ -72,6 +82,8 @@ $demoRoles = [
     ['u' => 'staffqms', 'label' => 'Staff QMS', 'icon' => 'folder'],
     ['u' => 'tu_sd', 'label' => 'TU (SD)', 'icon' => 'file-text'],
     ['u' => 'kepsek_sd', 'label' => 'Kepala Sekolah (SD)', 'icon' => 'graduation-cap'],
+    ['u' => 'manajerfa', 'label' => 'Manajer FA', 'icon' => 'briefcase'],
+    ['u' => 'stafffa', 'label' => 'Staff FA', 'icon' => 'wallet'],
 ];
 ?>
 <!DOCTYPE html>

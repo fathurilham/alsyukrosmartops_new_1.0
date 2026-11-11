@@ -1,10 +1,11 @@
-    <?php
+<?php
     $canAjukan = hasAccess($role, 'inventaris', 'ajukan');
     $canTambah = hasAccess($role, 'inventaris', 'tambah');
     $canKelola = hasAccess($role, 'inventaris', 'kelola');
     $canVerifikasi = hasAccess($role, 'inventaris', 'verifikasi');
     $canApprove = hasAccess($role, 'inventaris', 'approve');
     $canApproveAtasan = hasAccess($role, 'inventaris', 'approve_atasan');
+    $canApprovePengganti = hasAccess($role, 'inventaris', 'approve_pengganti');
     $canMonitoring = hasAccess($role, 'inventaris', 'monitoring');
 
     $barangList = $conn->query("SELECT * FROM barang ORDER BY kode_barang ASC")->fetch_all(MYSQLI_ASSOC);
@@ -27,7 +28,7 @@
     <div class="tabs" id="invTabs">
         <button class="tab-btn <?= $activeTab === 'barang' ? 'active' : '' ?>" data-tab="barang">Data Barang</button>
         <button class="tab-btn <?= $activeTab === 'pinjam' ? 'active' : '' ?>" data-tab="pinjam">Peminjaman & Persetujuan</button>
-        <?php if ($canKelola || $canVerifikasi): ?><button class="tab-btn <?= $activeTab === 'pengembalian' ? 'active' : '' ?>" data-tab="pengembalian">Pengembalian</button><?php endif; ?>
+        <?php if ($canKelola || $canVerifikasi || $canAjukan): ?><button class="tab-btn <?= $activeTab === 'pengembalian' ? 'active' : '' ?>" data-tab="pengembalian">Pengembalian</button><?php endif; ?>
         <?php if ($canKelola): ?>
         <button class="tab-btn <?= $activeTab === 'pemeriksaan' ? 'active' : '' ?>" data-tab="pemeriksaan">Pemeriksaan SPV</button>
         <button class="tab-btn <?= $activeTab === 'riwayat' ? 'active' : '' ?>" data-tab="riwayat">Riwayat Perubahan</button>
@@ -47,7 +48,7 @@
             </div>
             <div class="table-wrap">
                 <table class="dtable table table-hover align-middle mb-0" id="tblBarang">
-                    <thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Lokasi</th><th>Stok</th><th>Status</th><?php if ($canKelola): ?><th>Aksi</th><?php endif; ?></tr></thead>
+                    <thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Lokasi</th><th>Stok</th><th>Status</th><?php if ($canKelola): ?><th class="no-print">Aksi</th><?php endif; ?></tr></thead>
                     <tbody>
                     <?php if (!$barangList): ?><tr><td colspan="7" class="empty-row">Belum ada data barang.</td></tr><?php endif; ?>
                     <?php foreach ($barangList as $b):
@@ -60,7 +61,7 @@
                             <td><?= $b['stok'] ?></td>
                             <td><span class="badge <?= $statusBadge ?>"><?= ucfirst($b['status']) ?></span></td>
                             <?php if ($canKelola): ?>
-                            <td class="actions-cell"><button class="btn btn-outline btn-sm btn-icon" onclick='editBarang(<?= json_encode($b) ?>)'><i data-lucide="pencil"></i></button></td>
+                            <td class="actions-cell no-print"><button class="btn btn-outline btn-sm btn-icon" onclick='editBarang(<?= json_encode($b) ?>)'><i data-lucide="pencil"></i></button></td>
                             <?php endif; ?>
                         </tr>
                     <?php endforeach; ?>
@@ -83,20 +84,20 @@
             </div>
             <div class="table-wrap">
                 <table class="dtable table table-hover align-middle mb-0" id="tblPinjam">
-                    <thead><tr><th>Barang</th><th>Jml</th><th>Peminjam</th><th>Tgl Pinjam</th><th>Rencana Kembali</th><th>Keperluan</th><th>Status</th><th>Aksi</th></tr></thead>
+                    <thead><tr><th>Barang</th><th>Jml</th><th>Peminjam</th><th>Tgl Pinjam</th><th>Rencana Kembali</th><th>Keperluan</th><th>Status</th><th class="no-print">Aksi</th></tr></thead>
                     <tbody id="pinjamBody"><tr><td colspan="8" class="empty-row">Memuat data...</td></tr></tbody>
                 </table>
             </div>
         </div>
     </div>
 
-    <?php if ($canKelola || $canVerifikasi): ?>
+    <?php if ($canKelola || $canVerifikasi || $canAjukan): ?>
     <div class="tab-panel" id="panel-pengembalian" <?= $activeTab === 'pengembalian' ? '' : 'style="display:none"' ?>>
         <div class="card">
             <div class="card-head"><div><h2>Konfirmasi Pengembalian</h2><p>Peminjaman berstatus "disetujui" siap dikembalikan.</p></div><div id="toolbarKembali"></div></div>
             <div class="table-wrap">
                 <table class="dtable table table-hover align-middle mb-0" id="tblKembali">
-                    <thead><tr><th>Barang</th><th>Jml</th><th>Peminjam</th><th>Status</th><th>Aksi</th></tr></thead>
+                    <thead><tr><th>Barang</th><th>Jml</th><th>Peminjam</th><th>Status</th><th class="no-print">Aksi</th></tr></thead>
                     <tbody id="kembaliBody"><tr><td colspan="5" class="empty-row">Memuat data...</td></tr></tbody>
                 </table>
             </div>
@@ -111,7 +112,7 @@
             <div class="card-head"><div><h2>Pemeriksaan Kerusakan & Kehilangan</h2><p>Laporan barang bermasalah dari Staff yang menunggu tindak lanjut Anda.</p></div></div>
             <div class="table-wrap">
                 <table class="dtable table table-hover align-middle mb-0" id="tblPeriksa">
-                    <thead><tr><th>Tgl Kembali</th><th>Peminjam</th><th>Barang</th><th>Kondisi</th><th>Catatan Staff</th><th>Aksi</th></tr></thead>
+                    <thead><tr><th>Tgl Kembali</th><th>Peminjam</th><th>Barang</th><th>Kondisi</th><th>Catatan Staff</th><th class="no-print">Aksi</th></tr></thead>
                     <tbody id="periksaBody"><tr><td colspan="6" class="empty-row">Memuat data...</td></tr></tbody>
                 </table>
             </div>
@@ -215,17 +216,44 @@
         <div class="modal">
             <div class="modal-head"><h3>Ajukan Peminjaman Barang</h3><button class="modal-close" onclick="closeModal('modalPinjam')"><i data-lucide="x"></i></button></div>
             <div class="modal-body">
-                <div class="fld"><label>Barang</label>
+                <div class="fld"><label>Barang <span style="color:var(--danger)">*</span></label>
                     <select id="pBarang"><?php foreach ($barangList as $b) echo '<option value="' . $b['id'] . '">' . htmlspecialchars($b['nama_barang']) . ' (stok: ' . $b['stok'] . ')</option>'; ?></select>
                 </div>
                 <div class="form-grid">
-                    <div class="fld"><label>Jumlah</label><input type="number" id="pJumlah" value="1" min="1"></div>
-                    <div class="fld"><label>Tanggal Pinjam</label><input type="date" id="pTglPinjam" value="<?= date('Y-m-d') ?>"></div>
-                    <div class="fld"><label>Rencana Kembali</label><input type="date" id="pRencana"></div>
+                    <div class="fld"><label>Jumlah <span style="color:var(--danger)">*</span></label><input type="number" id="pJumlah" value="1" min="1" step="1"></div>
+                    <div class="fld"><label>Tanggal Pinjam <span style="color:var(--danger)">*</span></label><input type="date" id="pTglPinjam" value="<?= date('Y-m-d') ?>" min="<?= date('Y-m-d') ?>" onchange="const r=document.getElementById('pRencana'); if(r) r.min=this.value;"></div>
+                    <div class="fld"><label>Rencana Kembali</label><input type="date" id="pRencana" min="<?= date('Y-m-d') ?>"></div>
                 </div>
-                <div class="fld"><label>Keperluan</label><textarea id="pKeperluan"></textarea></div>
+                <div class="fld"><label>Keperluan <span style="color:var(--danger)">*</span> <small style="color:var(--muted);font-weight:400">(maks. 255 karakter)</small></label><textarea id="pKeperluan" maxlength="255" placeholder="Jelaskan keperluan peminjaman barang..."></textarea></div>
             </div>
-            <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal('modalPinjam')">Batal</button><button class="btn btn-primary" onclick="ajukanPinjam()">Ajukan</button></div>
+            <div class="modal-foot"><button class="btn btn-outline" onclick="closeModal('modalPinjam')">Batal</button><button class="btn btn-primary" id="btnSubmitPinjam" type="button" onclick="ajukanPinjam(this)">Ajukan</button></div>
+        </div>
+    </div>
+
+    <!-- MODAL APPROVAL PENGGANTI INVENTARIS -->
+    <div class="modal-overlay" id="modalPenggantiInv">
+        <div class="modal">
+            <div class="modal-head">
+                <h3 id="modalPenggantiInvTitle">Persetujuan sebagai Pengganti</h3>
+                <button class="modal-close" onclick="closeModal('modalPenggantiInv')"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pgInvId">
+                <input type="hidden" id="pgInvSetuju">
+                <p style="margin-bottom:14px;font-size:13.5px;color:var(--muted)">Anda akan memproses pengajuan ini menggantikan atasan langsung pemohon yang sedang berhalangan. Tindakan ini dicatat di log audit dan dikirimkan ke approver asli.</p>
+                <div class="fld">
+                    <label>Alasan Menggantikan <span style="color:var(--danger)">*</span> <small style="color:var(--muted);font-weight:400">(10–255 karakter)</small></label>
+                    <textarea id="pgInvAlasan" rows="3" maxlength="255" placeholder="Contoh: Kepala Sekolah SD sedang dinas luar kota hari ini..."></textarea>
+                </div>
+                <div class="fld" id="pgInvCatatanWrap" style="display:none">
+                    <label>Catatan Penolakan (Opsional)</label>
+                    <textarea id="pgInvCatatan" rows="2" placeholder="Catatan tambahan untuk pemohon..."></textarea>
+                </div>
+            </div>
+            <div class="modal-foot">
+                <button class="btn btn-outline" onclick="closeModal('modalPenggantiInv')">Batal</button>
+                <button class="btn btn-primary" id="btnSubmitPenggantiInv" type="button" onclick="submitApprovePenggantiInv(this)">Simpan Keputusan</button>
+            </div>
         </div>
     </div>
 
@@ -233,7 +261,10 @@
     const CAN_VERIFIKASI = <?= $canVerifikasi ? 'true' : 'false' ?>;
     const CAN_APPROVE = <?= $canApprove ? 'true' : 'false' ?>;
     const CAN_APPROVE_ATASAN = <?= $canApproveAtasan ? 'true' : 'false' ?>;
+    const CAN_APPROVE_PENGGANTI = <?= $canApprovePengganti ? 'true' : 'false' ?>;
     const CAN_KELOLA = <?= $canKelola ? 'true' : 'false' ?>;
+    const CURRENT_USER_ID = <?= (int)$user['id'] ?>;
+    let isSubmittingPinjam = false;
 
     document.querySelectorAll('#invTabs .tab-btn').forEach(b => b.addEventListener('click', () => {
         document.querySelectorAll('#invTabs .tab-btn').forEach(x => x.classList.remove('active'));
@@ -277,28 +308,92 @@
         else showModalError('modalBarang', r.msg);
     }
 
-    async function ajukanPinjam() {
-        const r = await apiFetch('inventaris', 'ajukan_pinjam', {
-            barang_id: document.getElementById('pBarang').value,
-            jumlah: document.getElementById('pJumlah').value,
-            tanggal_pinjam: document.getElementById('pTglPinjam').value,
-            rencana_kembali: document.getElementById('pRencana').value,
-            keperluan: document.getElementById('pKeperluan').value,
-        });
-        if (r.ok) { toast('Pengajuan peminjaman terkirim.', 'success'); closeModal('modalPinjam'); loadPinjaman(); }
-        else showModalError('modalPinjam', r.msg);
+    async function ajukanPinjam(btn) {
+        if (isSubmittingPinjam) return;
+        const submitBtn = btn || document.getElementById('btnSubmitPinjam');
+        const barangId = document.getElementById('pBarang').value;
+        const jumlahRaw = document.getElementById('pJumlah').value.trim();
+        const tglPinjam = document.getElementById('pTglPinjam').value.trim();
+        const rencanaKembali = document.getElementById('pRencana').value.trim();
+        const keperluan = document.getElementById('pKeperluan').value.trim();
+
+        if (!barangId) {
+            return showModalError('modalPinjam', 'Silakan pilih barang yang akan dipinjam.');
+        }
+        const jumlahInt = Number(jumlahRaw);
+        if (!jumlahRaw || !Number.isInteger(jumlahInt) || jumlahInt < 1) {
+            return showModalError('modalPinjam', 'Jumlah peminjaman harus berupa angka bulat minimal 1.');
+        }
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${yyyy}-${mm}-${dd}`;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(tglPinjam)) {
+            return showModalError('modalPinjam', 'Tanggal pinjam wajib diisi dengan format yang benar.');
+        }
+        if (tglPinjam < todayStr) {
+            return showModalError('modalPinjam', `Tanggal pinjam tidak boleh kurang dari hari ini (${todayStr}).`);
+        }
+        if (rencanaKembali !== '') {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(rencanaKembali)) {
+                return showModalError('modalPinjam', 'Format tanggal rencana kembali tidak valid.');
+            }
+            if (rencanaKembali < tglPinjam) {
+                return showModalError('modalPinjam', 'Tanggal rencana kembali tidak boleh lebih awal dari tanggal pinjam.');
+            }
+        }
+        if (!keperluan) {
+            return showModalError('modalPinjam', 'Keperluan peminjaman wajib diisi.');
+        }
+        if (keperluan.length > 255) {
+            return showModalError('modalPinjam', 'Keperluan peminjaman maksimal 255 karakter.');
+        }
+
+        isSubmittingPinjam = true;
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = 'Mengirim...';
+        }
+        try {
+            const r = await apiFetch('inventaris', 'ajukan_pinjam', {
+                barang_id: barangId,
+                jumlah: jumlahInt,
+                tanggal_pinjam: tglPinjam,
+                rencana_kembali: rencanaKembali,
+                keperluan: keperluan,
+            });
+            if (r.ok) {
+                toast('Pengajuan peminjaman terkirim.', 'success');
+                closeModal('modalPinjam');
+                loadPinjaman();
+                loadBarang();
+            } else {
+                showModalError('modalPinjam', r.msg);
+            }
+        } finally {
+            isSubmittingPinjam = false;
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = 'Ajukan';
+            }
+        }
     }
 
-    const statusBadge = { diajukan: 'b-gray', menunggu_approval_atasan: 'b-yellow', disetujui_atasan: 'b-teal', ditolak_atasan: 'b-red', diverifikasi: 'b-blue', disetujui: 'b-green', ditolak: 'b-red', ditolak_staff: 'b-red', dikembalikan: 'b-purple' };
-    const statusLabel = { diajukan: 'Diajukan', menunggu_approval_atasan: 'Menunggu Atasan', disetujui_atasan: 'Disetujui Atasan', ditolak_atasan: 'Ditolak Atasan', diverifikasi: 'Diverifikasi', disetujui: 'Disetujui', ditolak: 'Ditolak', ditolak_staff: 'Ditolak Staff', dikembalikan: 'Dikembalikan' };
+    const statusBadge = { diajukan: 'b-gray', menunggu_approval_atasan: 'b-yellow', disetujui_atasan: 'b-teal', ditolak_atasan: 'b-red', diverifikasi: 'b-blue', disetujui: 'b-green', ditolak: 'b-red', ditolak_staff: 'b-red', dikembalikan: 'b-purple', dibatalkan: 'b-gray' };
+    const statusLabel = { diajukan: 'Diajukan', menunggu_approval_atasan: 'Menunggu Atasan', disetujui_atasan: 'Disetujui Atasan', ditolak_atasan: 'Ditolak Atasan', diverifikasi: 'Diverifikasi', disetujui: 'Disetujui', ditolak: 'Ditolak', ditolak_staff: 'Ditolak Staff', dikembalikan: 'Dikembalikan', dibatalkan: 'Dibatalkan' };
 
     function bukaFormPinjam() {
         if (document.getElementById('pBarang').options.length > 0) {
             document.getElementById('pBarang').selectedIndex = 0;
         }
         document.getElementById('pJumlah').value = 1;
-        document.getElementById('pTglPinjam').value = new Date().toISOString().split('T')[0];
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        document.getElementById('pTglPinjam').value = todayStr;
+        document.getElementById('pTglPinjam').min = todayStr;
         document.getElementById('pRencana').value = '';
+        document.getElementById('pRencana').min = todayStr;
         document.getElementById('pKeperluan').value = '';
         openModal('modalPinjam');
     }
@@ -316,22 +411,44 @@
         }
 
         if (document.getElementById('pinjamBody')) updateDOM('pinjamBody', r.data.length ? r.data.map(p => {
+            const aksiParts = [];
+            if (p.status === 'menunggu_approval_atasan' && CAN_APPROVE_ATASAN && p.can_approve_atasan) {
+                aksiParts.push(btnPairAtasan('approve_atasan', p.id));
+            } else if (p.status === 'menunggu_approval_atasan' && CAN_APPROVE_PENGGANTI && p.can_approve_pengganti) {
+                aksiParts.push(btnPairPenggantiInv(p.id));
+            } else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && CAN_VERIFIKASI) {
+                aksiParts.push(btnPair('verifikasi_pinjam', p.id));
+            } else if (p.status === 'diverifikasi' && CAN_APPROVE) {
+                aksiParts.push(btnPair('approve_pinjam', p.id));
+            }
+
+            if (p.can_cancel || (Number(p.peminjam_id) === CURRENT_USER_ID && ['menunggu_approval_atasan', 'diajukan', 'disetujui_atasan', 'diverifikasi'].includes(p.status))) {
+                aksiParts.push(`<button class="btn btn-danger btn-sm" onclick="batalkanPinjam(${p.id}, this)">Batalkan</button>`);
+            }
+
             let aksi = '';
-            if (p.status === 'menunggu_approval_atasan' && CAN_APPROVE_ATASAN) aksi = btnPairAtasan('approve_atasan', p.id);
-            else if ((p.status === 'diajukan' || p.status === 'disetujui_atasan') && CAN_VERIFIKASI) aksi = btnPair('verifikasi_pinjam', p.id);
-            else if (p.status === 'diverifikasi' && CAN_APPROVE) aksi = btnPair('approve_pinjam', p.id);
-            else if (p.status.includes('ditolak')) aksi = '<i data-lucide="x" style="color:var(--danger);width:20px;height:20px;margin-top:4px"></i>';
-            else if (['disetujui_atasan', 'diverifikasi', 'disetujui', 'dikembalikan'].includes(p.status)) aksi = '<i data-lucide="check" style="color:var(--primary);width:20px;height:20px;margin-top:4px"></i>';
-            else aksi = '<span style="color:#9ca3af;font-size:12px;margin-top:4px">—</span>';
-            return `<tr><td>${esc(p.nama_barang)}</td><td>${p.jumlah}</td><td><div>${esc(p.peminjam_nama)}</div><div style="font-size:12px;color:var(--muted)">${esc(p.peminjam_jabatan) || '-'}</div></td><td>${p.tanggal_pinjam}</td><td>${p.rencana_kembali||'-'}</td><td>${esc(p.keperluan)||'-'}</td>
-            <td><span class="badge ${statusBadge[p.status]}">${statusLabel[p.status]}</span></td><td class="actions-cell">${aksi}</td></tr>`;
+            if (aksiParts.length) {
+                aksi = aksiParts.join(' ');
+            } else if (p.status.includes('ditolak') || p.status === 'dibatalkan') {
+                aksi = '<i data-lucide="x" style="color:var(--danger);width:20px;height:20px;margin-top:4px"></i>';
+            } else if (['disetujui_atasan', 'diverifikasi', 'disetujui', 'dikembalikan'].includes(p.status)) {
+                aksi = '<i data-lucide="check" style="color:var(--primary);width:20px;height:20px;margin-top:4px"></i>';
+            } else {
+                aksi = '<span style="color:#9ca3af;font-size:12px;margin-top:4px">—</span>';
+            }
+            let keperluanHtml = `<div>${esc(p.keperluan)||'-'}</div>`;
+            if (p.approval_pengganti_oleh) {
+                keperluanHtml += `<div style="font-size:11.5px;color:#6b4f1d;background:#fef3c7;border:1px solid #fde68a;border-radius:4px;padding:3px 6px;margin-top:4px">Diputuskan oleh pengganti: <b>${esc(p.pengganti_nama || '-')}</b> — ${esc(p.approval_pengganti_alasan || '-')}</div>`;
+            }
+            return `<tr><td>${esc(p.nama_barang)}</td><td>${p.jumlah}</td><td><div>${esc(p.peminjam_nama)}</div><div style="font-size:12px;color:var(--muted)">${esc(p.peminjam_jabatan) || '-'}</div></td><td>${p.tanggal_pinjam}</td><td>${p.rencana_kembali||'-'}</td><td>${keperluanHtml}</td>
+            <td><span class="badge ${statusBadge[p.status] || 'b-gray'}">${statusLabel[p.status] || esc(p.status)}</span></td><td class="actions-cell no-print">${aksi}</td></tr>`;
         }).join('') : '<tr><td colspan="8" class="empty-row">Belum ada pengajuan peminjaman.</td></tr>');
 
         if (document.getElementById('kembaliBody')) {
-            const siap = r.data.filter(p => p.status === 'disetujui');
+            const siap = r.data.filter(p => p.status === 'disetujui' && p.can_return);
                 updateDOM('kembaliBody', siap.length ? siap.map(p => `<tr><td>${esc(p.nama_barang)}</td><td>${p.jumlah}</td><td><div>${esc(p.peminjam_nama)}</div><div style="font-size:12px;color:var(--muted)">${esc(p.peminjam_jabatan) || '-'}</div></td>
                 <td><span class="badge b-green">Dipinjam</span></td>
-                <td><button class="btn btn-outline btn-sm" onclick="kembalikan(${p.id})"><i data-lucide="corner-down-left"></i> Konfirmasi Kembali</button></td></tr>`).join('')
+                <td class="no-print"><button class="btn btn-outline btn-sm" onclick="kembalikan(${p.id})"><i data-lucide="corner-down-left"></i> Konfirmasi Kembali</button></td></tr>`).join('')
                 : '<tr><td colspan="5" class="empty-row">Tidak ada barang yang sedang dipinjam.</td></tr>');
         }
         
@@ -342,7 +459,7 @@
                     <td>${p.tanggal_kembali}</td><td>${esc(p.peminjam_nama)}</td><td>${esc(p.nama_barang)} (${p.jumlah})</td>
                     <td><span class="badge b-red">${p.kondisi_barang.replace('_', ' ').toUpperCase()}</span></td>
                     <td>${esc(p.catatan)}</td>
-                    <td class="actions-cell">
+                    <td class="actions-cell no-print">
                         ${p.status_pemeriksaan === 'menunggu_spv' 
                             ? `<button class="btn btn-primary btn-sm" onclick="bukaPeriksa(${p.id})">Tindak Lanjut</button>`
                             : `<span class="badge b-green">Selesai (${(p.tindakan_spv||'').replace(/_/g, ' ')})</span>`}
@@ -355,45 +472,127 @@
                 updateDOM('riwayatBody', rRiwayat.data.length ? rRiwayat.data.map(r => `<tr>
                     <td>${r.created_at}</td><td>${esc(r.nama_barang)}</td><td>${r.jenis_perubahan.replace(/_/g, ' ').toUpperCase()}</td>
                     <td>${r.jumlah_sebelum} &rarr; ${r.jumlah_sesudah}</td>
-                    <td>${r.kondisi_sebelum.replace('_',' ')} &rarr; ${r.kondisi_sesudah.replace('_',' ')}</td>
+                    <td>${(r.kondisi_sebelum||'').replace('_',' ')} &rarr; ${(r.kondisi_sesudah||'').replace('_',' ')}</td>
                     <td>${esc(r.alasan)}</td><td>${esc(r.nama_user)}</td>
                 </tr>`).join('') : '<tr><td colspan="7" class="empty-row">Belum ada riwayat perubahan stok.</td></tr>');
             }
         }
     }
     function btnPair(action, id) {
-        return `<button class="btn btn-primary btn-sm" onclick="prosesPinjam('${action}',${id},1)"><i data-lucide="check"></i></button>
-                <button class="btn btn-danger btn-sm" onclick="prosesPinjam('${action}',${id},0)"><i data-lucide="x"></i></button>`;
+        return `<button class="btn btn-primary btn-sm" onclick="prosesPinjam('${action}',${id},1,this)"><i data-lucide="check"></i></button>
+                <button class="btn btn-danger btn-sm" onclick="prosesPinjam('${action}',${id},0,this)"><i data-lucide="x"></i></button>`;
     }
     function btnPairAtasan(action, id) {
-        return `<button class="btn btn-primary btn-sm" onclick="prosesPinjamAtasan('${action}',${id},1)">Setuju</button>
-                <button class="btn btn-danger btn-sm" onclick="prosesPinjamAtasan('${action}',${id},0)">Tolak</button>`;
+        return `<button class="btn btn-primary btn-sm" onclick="prosesPinjamAtasan('${action}',${id},1,this)">Setuju</button>
+                <button class="btn btn-danger btn-sm" onclick="prosesPinjamAtasan('${action}',${id},0,this)">Tolak</button>`;
     }
-    async function prosesPinjam(action, id, setuju) {
+    function btnPairPenggantiInv(id) {
+        return `<button class="btn btn-outline btn-sm" onclick="bukaModalPenggantiInv(${id},1)">Setujui sbg Pengganti</button>
+                <button class="btn btn-danger btn-sm" onclick="bukaModalPenggantiInv(${id},0)">Tolak sbg Pengganti</button>`;
+    }
+    function bukaModalPenggantiInv(id, setuju) {
+        document.getElementById('pgInvId').value = id;
+        document.getElementById('pgInvSetuju').value = setuju ? '1' : '0';
+        document.getElementById('pgInvAlasan').value = '';
+        document.getElementById('pgInvCatatan').value = '';
+        document.getElementById('pgInvCatatanWrap').style.display = setuju ? 'none' : 'block';
+        document.getElementById('modalPenggantiInvTitle').textContent = setuju
+            ? 'Setujui sebagai Pengganti'
+            : 'Tolak sebagai Pengganti';
+        const btn = document.getElementById('btnSubmitPenggantiInv');
+        if (btn) {
+            btn.className = setuju ? 'btn btn-primary' : 'btn btn-danger';
+            btn.textContent = setuju ? 'Setujui sebagai Pengganti' : 'Tolak sebagai Pengganti';
+        }
+        openModal('modalPenggantiInv');
+    }
+    async function submitApprovePenggantiInv(btn) {
+        const id = document.getElementById('pgInvId').value;
+        const setuju = document.getElementById('pgInvSetuju').value;
+        const alasan = document.getElementById('pgInvAlasan').value.trim();
+        const catatan = document.getElementById('pgInvCatatan').value.trim();
+        if (alasan.length < 10) {
+            return showModalError('modalPenggantiInv', 'Alasan menggantikan wajib diisi minimal 10 karakter.');
+        }
+        if (alasan.length > 255) {
+            return showModalError('modalPenggantiInv', 'Alasan menggantikan maksimal 255 karakter.');
+        }
+        if (btn) btn.disabled = true;
+        try {
+            const r = await apiFetch('inventaris', 'approve_atasan', {
+                id,
+                setuju,
+                pengganti: 1,
+                alasan,
+                catatan_atasan: catatan
+            });
+            if (r.ok) {
+                toast('Keputusan pengganti berhasil disimpan.', 'success');
+                closeModal('modalPenggantiInv');
+                loadPinjaman();
+                loadBarang();
+            } else {
+                showModalError('modalPenggantiInv', r.msg);
+            }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+    async function prosesPinjam(action, id, setuju, btn) {
+        if (btn && btn.disabled) return;
         let catatan = '';
         if (!setuju) {
             catatan = await customPrompt('Masukkan alasan penolakan:');
             if (catatan === null) return;
         }
-        const r = await apiFetch('inventaris', action, { id, setuju, catatan });
-        if (r.ok) { 
-            toast('Berhasil diproses.', 'success'); 
-            loadPinjaman(); 
-            loadBarang(); 
-        } else toast(r.msg, 'error');
+        if (btn) btn.disabled = true;
+        try {
+            const r = await apiFetch('inventaris', action, { id, setuju, catatan });
+            if (r.ok) { 
+                toast('Berhasil diproses.', 'success'); 
+                loadPinjaman(); 
+                loadBarang(); 
+            } else toast(r.msg, 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
-    async function prosesPinjamAtasan(action, id, setuju) {
+    async function prosesPinjamAtasan(action, id, setuju, btn) {
+        if (btn && btn.disabled) return;
         let catatan = '';
         if (!setuju) {
             catatan = await customPrompt('Masukkan alasan penolakan:');
             if (catatan === null) return; // cancelled
         }
-        const r = await apiFetch('inventaris', action, { id, setuju, catatan_atasan: catatan });
-        if (r.ok) { 
-            toast('Berhasil diproses.', 'success'); 
-            loadPinjaman(); 
-            loadBarang(); 
-        } else toast(r.msg, 'error');
+        if (btn) btn.disabled = true;
+        try {
+            const r = await apiFetch('inventaris', action, { id, setuju, catatan_atasan: catatan });
+            if (r.ok) { 
+                toast('Berhasil diproses.', 'success'); 
+                loadPinjaman(); 
+                loadBarang(); 
+            } else toast(r.msg, 'error');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+    async function batalkanPinjam(id, btn) {
+        if (btn && btn.disabled) return;
+        const konfirm = await customConfirm('Yakin ingin membatalkan pengajuan peminjaman ini?', 'Ya, Batalkan', 'btn-danger');
+        if (!konfirm) return;
+        if (btn) btn.disabled = true;
+        try {
+            const r = await apiFetch('inventaris', 'batalkan_pinjam', { id });
+            if (r.ok) {
+                toast('Pengajuan peminjaman berhasil dibatalkan.', 'success');
+                loadPinjaman();
+                loadBarang();
+            } else {
+                toast(r.msg, 'error');
+            }
+        } finally {
+            if (btn) btn.disabled = false;
+        }
     }
     function kembalikan(id) {
         document.getElementById('kPinjamId').value = id;
@@ -484,7 +683,7 @@
                 let aksi = '';
                 if (CAN_KELOLA) {
                     const bStr = JSON.stringify(b).replace(/'/g, "&apos;").replace(/"/g, "&quot;");
-                    aksi = `<td class="actions-cell"><button class="btn btn-outline btn-sm btn-icon" onclick="editBarang(${bStr})"><i data-lucide="pencil"></i></button></td>`;
+                    aksi = `<td class="actions-cell no-print"><button class="btn btn-outline btn-sm btn-icon" onclick="editBarang(${bStr})"><i data-lucide="pencil"></i></button></td>`;
                 }
                 return `<tr>
                     <td><b>${esc(b.kode_barang)}</b></td>

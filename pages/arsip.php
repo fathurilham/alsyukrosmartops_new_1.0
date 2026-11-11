@@ -23,7 +23,7 @@ $totalBackup = $conn->query("SELECT COUNT(*) n FROM backup_arsip")->fetch_assoc(
     </div>
     <div class="table-wrap">
         <table class="dtable table table-hover align-middle mb-0" id="tblArsip">
-            <thead><tr><th>Judul Dokumen</th><th>Kategori</th><th>Tingkat Akses</th><th>Diunggah oleh</th><th>Tanggal</th><?php if ($canKelola): ?><th>Aksi</th><?php endif; ?></tr></thead>
+            <thead><tr><th>Judul Dokumen</th><th>Kategori</th><th>Tingkat Akses</th><th>Diunggah oleh</th><th>Tanggal</th><?php if ($canKelola): ?><th class="no-print">Aksi</th><?php endif; ?></tr></thead>
             <tbody id="arsipBody"><tr><td colspan="6" class="empty-row">Memuat data...</td></tr></tbody>
         </table>
     </div>
@@ -33,8 +33,8 @@ $totalBackup = $conn->query("SELECT COUNT(*) n FROM backup_arsip")->fetch_assoc(
 <div class="card">
     <div class="card-head"><div><h2>Riwayat Backup Arsip</h2><p>Pencadangan data untuk mengurangi risiko kehilangan dokumen.</p></div><div id="toolbarBackup"></div></div>
     <div class="table-wrap">
-        <table class="dtable table table-hover align-middle mb-0" id="tblBackup"><thead><tr><th>Dokumen</th><th>Waktu Backup</th><th>Lokasi</th></tr></thead>
-        <tbody id="backupBody"><tr><td colspan="3" class="empty-row">Memuat data...</td></tr></tbody></table>
+        <table class="dtable table table-hover align-middle mb-0" id="tblBackup"><thead><tr><th>Dokumen</th><th>Tingkat Akses</th><th>Waktu Backup</th><th>Lokasi / Unduh</th></tr></thead>
+        <tbody id="backupBody"><tr><td colspan="4" class="empty-row">Memuat data...</td></tr></tbody></table>
     </div>
 </div>
 <?php endif; ?>
@@ -69,6 +69,9 @@ $totalBackup = $conn->query("SELECT COUNT(*) n FROM backup_arsip")->fetch_assoc(
 
 <script>
 const A_KELOLA = <?= $canKelola ? 'true' : 'false' ?>;
+const CURRENT_ROLE = '<?= $role ?>';
+const CURRENT_USER_ID = <?= (int)($user['id'] ?? 0) ?>;
+const ALLOWED_BACKUP_ROLES = ['admin', 'manajer_qms', 'staff_qms'];
 document.getElementById('searchArsip')?.addEventListener('input', e => {
     const q = e.target.value.toLowerCase();
     document.querySelectorAll('#arsipBody tr').forEach(tr => tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none');
@@ -79,7 +82,7 @@ async function loadArsip() {
     if (!r.ok) return;
     if (document.getElementById('arsipBody')) updateDOM('arsipBody', r.data.length ? r.data.map(a => `<tr><td><a href="download.php?id=${a.id}" target="_blank" style="text-decoration:none; color:var(--primary); font-weight:600;"><i data-lucide="download" style="width:16px;height:16px;margin-right:4px;"></i>${esc(a.judul_dokumen)}</a></td><td>${esc(a.nama_kategori)||'-'}</td>
         <td><span class="badge ${aksesBadge[a.tingkat_akses]}">${esc(a.tingkat_akses)}</span></td><td>${esc(a.uploader_nama)}</td><td>${a.tanggal_unggah}</td>
-        ${A_KELOLA ? `<td><button class="btn btn-outline btn-sm" onclick="backupArsip(${a.id})"><i data-lucide="database-backup"></i> Backup</button></td>` : ''}
+        ${A_KELOLA ? `<td class="actions-cell no-print"><button class="btn btn-outline btn-sm" onclick="backupArsip(${a.id})"><i data-lucide="database-backup"></i> Backup</button></td>` : ''}
         </tr>`).join('') : '<tr><td colspan="6" class="empty-row">Belum ada dokumen.</td></tr>');
 }
 async function uploadArsip() {
@@ -108,7 +111,27 @@ async function loadBackup() {
     if (!el) return;
     const r = await apiFetch('arsip', 'list_backup', {}, 'GET');
     if (!r.ok) return;
-    updateDOM('backupBody', r.data.length ? r.data.map(b => `<tr><td>${esc(b.judul_dokumen)||'-'}</td><td>${b.tanggal_backup}</td><td>${esc(b.lokasi_backup)}</td></tr>`).join('') : '<tr><td colspan="3" class="empty-row">Belum ada riwayat backup.</td></tr>');
+    updateDOM('backupBody', r.data.length ? r.data.map(b => {
+        const tingkat = b.tingkat_akses || 'umum';
+        const badgeClass = aksesBadge[tingkat] || 'b-gray';
+        const isSecret = tingkat === 'rahasia';
+        const isOwner = Number(b.uploader_id) === CURRENT_USER_ID;
+        const canDownloadBackup = ALLOWED_BACKUP_ROLES.includes(CURRENT_ROLE) && (!isSecret || CURRENT_ROLE === 'admin' || CURRENT_ROLE === 'manajer_qms' || isOwner);
+
+        let aksiLokasi = '';
+        if (canDownloadBackup) {
+            aksiLokasi = `<a href="download.php?backup_id=${b.id}" target="_blank" style="text-decoration:none; color:var(--primary); font-weight:600;"><i data-lucide="download" style="width:14px;height:14px;margin-right:4px;"></i>${esc(b.lokasi_backup)}</a>`;
+        } else {
+            aksiLokasi = `<span style="color:var(--muted); font-size:12px;" title="Unduh dibatasi sesuai tingkat akses dokumen (Rahasia) atau wewenang peran"><i data-lucide="lock" style="width:13px;height:13px;margin-right:4px;color:var(--danger);vertical-align:-1px;"></i>${esc(b.lokasi_backup)} <small style="color:var(--danger)">(Dibatasi)</small></span>`;
+        }
+
+        return `<tr>
+            <td>${esc(b.judul_dokumen) || '-'}</td>
+            <td><span class="badge ${badgeClass}">${esc(tingkat)}</span></td>
+            <td>${b.tanggal_backup}</td>
+            <td>${aksiLokasi}</td>
+        </tr>`;
+    }).join('') : '<tr><td colspan="4" class="empty-row">Belum ada riwayat backup.</td></tr>');
 }
 loadArsip(); loadBackup();
 setInterval(loadArsip, 10000); // Polling real-time data

@@ -96,13 +96,43 @@ a{text-decoration:none}
 .icon-btn{position:relative;width:38px;height:38px;border-radius:.6rem;border:1px solid var(--border);background:var(--card);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .15s}
 .icon-btn:hover{border-color:var(--primary)}
 .icon-btn svg{width:18px;height:18px;color:var(--muted)}
-.notif-dot{position:absolute;top:7px;right:7px;width:8px;height:8px;border-radius:50%;background:var(--danger);box-shadow:0 0 0 2px var(--card)}
+.notif-dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--card);display:inline-flex;align-items:center;justify-content:center}
 .badge-role{padding:6px 13px;border-radius:20px;font-size:11.5px;font-weight:700;letter-spacing:.2px}
 .notif-panel{position:absolute;right:0;top:52px;width:340px;max-height:420px;overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);z-index:50}
-.notif-item{padding:12px 16px;border-bottom:1px solid var(--border);font-size:12.5px}
+.notif-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:#f9fafb;position:sticky;top:0;z-index:2}
+.notif-panel-head h4{margin:0;font-size:13px;font-weight:600;color:var(--text)}
+.notif-panel-actions{display:flex;align-items:center;gap:6px}
+.notif-panel-btn{background:none;border:none;cursor:pointer;color:var(--muted);padding:4px;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;transition:color .15s}
+.notif-panel-btn:hover{color:var(--primary)}
+.notif-panel-btn svg{width:15px;height:15px}
+.notif-item{padding:12px 16px;border-bottom:1px solid var(--border);font-size:12.5px;transition:background-color .15s}
+.notif-item:hover{background-color:rgba(0,0,0,0.02)}
 .notif-item:last-child{border-bottom:none}
+.notif-item.notif-unread{background-color:rgba(16,185,129,0.04)}
 .notif-item b{display:block;font-size:10.5px;color:var(--primary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
 .notif-item span{color:var(--muted);font-size:11px}
+
+/* Banner Notifikasi Melayang */
+#notifBannerContainer{position:fixed;top:20px;right:20px;z-index:99999;display:flex;flex-direction:column;gap:10px;max-width:380px;width:100%;pointer-events:none}
+@media (max-width:640px){#notifBannerContainer{top:12px;left:12px;right:12px;width:auto;max-width:none}}
+.notif-banner{pointer-events:auto;background:var(--card,#fff);border:1px solid var(--border,#e5e7eb);border-left:4px solid var(--primary,#10b981);border-radius:var(--radius-md,8px);box-shadow:0 10px 25px -5px rgba(0,0,0,0.1),0 8px 10px -6px rgba(0,0,0,0.1);padding:12px 16px;cursor:pointer;transition:transform .2s ease,opacity .2s ease;animation:bannerSlideIn .3s cubic-bezier(.16,1,.3,1);display:flex;flex-direction:column;gap:4px}
+.notif-banner:hover{transform:translateY(-2px);box-shadow:0 14px 28px -5px rgba(0,0,0,0.15)}
+.notif-banner.is-leaving{opacity:0;transform:translateX(100%);transition:all .3s ease}
+@media (max-width:640px){.notif-banner.is-leaving{transform:translateY(-100%)}}
+.notif-banner-darurat{border-left:4px solid var(--danger,#ef4444) !important;background:#fff5f5;box-shadow:0 0 0 1px rgba(239,68,68,0.2),0 10px 25px -5px rgba(239,68,68,0.2)}
+.notif-banner-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.notif-banner-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--primary,#10b981)}
+.notif-banner-badge.badge-darurat{color:var(--danger,#ef4444);font-weight:800}
+.notif-banner-time{font-size:11px;color:var(--muted,#6b7280)}
+.notif-banner-body{font-size:13px;color:var(--text,#1f2937);line-height:1.4}
+@keyframes bannerSlideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){.notif-banner{animation:none !important;transition:none !important}}
+
+/* Baris Pengaturan Notifikasi */
+.notif-pref-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.notif-pref-row:last-child{border-bottom:none}
+.notif-pref-info h5{margin:0 0 2px 0;font-size:13px;font-weight:600;color:var(--text)}
+.notif-pref-info p{margin:0;font-size:11.5px;color:var(--muted)}
 .app-content{flex:1;padding:26px 30px}
 
 /* ── 3. Stat cards ── */
@@ -157,10 +187,11 @@ table.dtable th:last-child{border-top-right-radius:.5rem}
 
 /* ── 9. Toast ── */
 #toastContainer{position:fixed;top:20px;right:20px;z-index:1080;display:flex;flex-direction:column;gap:10px}
-.toast{background:var(--card);border-radius:var(--bs-border-radius);padding:13px 16px;box-shadow:var(--shadow-md);display:flex;align-items:center;gap:10px;min-width:280px;max-width:360px;cursor:pointer;font-size:13px;font-weight:500;border-left:4px solid var(--info);opacity:1}
-.toast-success{border-left-color:var(--primary)}
-.toast-error{border-left-color:var(--danger)}
-.toast-warning{border-left-color:var(--warning)}
+.app-toast{background:var(--card);border-radius:var(--bs-border-radius);padding:13px 16px;box-shadow:var(--shadow-md);display:flex;align-items:center;gap:10px;min-width:280px;max-width:360px;cursor:pointer;font-size:13px;font-weight:500;border-left:4px solid var(--info);opacity:1}
+.app-toast-info{border-left-color:var(--info)}
+.app-toast-success{border-left-color:var(--primary)}
+.app-toast-error{border-left-color:var(--danger)}
+.app-toast-warning{border-left-color:var(--warning)}
 
 /* ── 10. Empty state, search bar, hierarchy tree ── */
 .empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
@@ -243,7 +274,7 @@ body.no-scroll{overflow:hidden}
 
 /* ═══════════════════════════════════════ CETAK (PRINT) ═══════════════════════════════════════ */
 @media print{
-  .sidebar,.topbar,.notif-panel,.no-print,.export-toolbar,.btn:not(.keep-print),
+  .sidebar,.topbar,.notif-panel,.no-print,.export-toolbar,.actions-cell,.btn:not(.keep-print),
   .modal-overlay,#toastContainer,.hgroup .btn,.search-bar,.tabs{ display:none !important; }
   .app-content{ padding:0 !important; }
   .card{ border:none !important; box-shadow:none !important; padding:0 !important; }

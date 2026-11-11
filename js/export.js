@@ -17,6 +17,65 @@ function _tableTitle(tableEl, fallback) {
     return (h2 ? h2.textContent.trim() : null) || fallback || 'Data';
 }
 
+function _prepareTableClone(table) {
+    const clone = table.cloneNode(true);
+    clone.classList.remove('d-none');
+
+    // Identifikasi indeks kolom yang merupakan aksi / kontrol / no-print
+    const excludeIndices = new Set();
+
+    // 1. Periksa header kolom di thead (atau tr pertama jika tidak ada thead)
+    const headerRows = clone.querySelectorAll('thead tr');
+    const firstRow = headerRows.length ? headerRows[0] : clone.querySelector('tr');
+    if (firstRow) {
+        Array.from(firstRow.children).forEach((cell, idx) => {
+            const txt = (cell.textContent || '').trim().toLowerCase();
+            if (
+                txt === 'aksi' ||
+                txt === 'action' ||
+                txt === 'tindakan' ||
+                cell.classList.contains('actions-cell') ||
+                cell.classList.contains('no-print')
+            ) {
+                excludeIndices.add(idx);
+            }
+        });
+    }
+
+    // 2. Periksa juga baris data di tbody jika ada sel bertanda .actions-cell atau .no-print
+    clone.querySelectorAll('tbody tr').forEach(row => {
+        Array.from(row.children).forEach((cell, idx) => {
+            if ((cell.classList.contains('actions-cell') || cell.classList.contains('no-print')) && !cell.hasAttribute('colspan')) {
+                excludeIndices.add(idx);
+            }
+        });
+    });
+
+    // 3. Hapus kolom-kolom yang di-exclude dari seluruh baris (mulai dari indeks terbesar)
+    const sortedIndices = Array.from(excludeIndices).sort((a, b) => b - a);
+    clone.querySelectorAll('tr').forEach(row => {
+        const cells = Array.from(row.children);
+        if (cells.length === 1 && cells[0].hasAttribute('colspan')) {
+            const currentColspan = parseInt(cells[0].getAttribute('colspan'), 10);
+            if (!isNaN(currentColspan) && currentColspan > sortedIndices.length) {
+                cells[0].setAttribute('colspan', currentColspan - sortedIndices.length);
+            }
+            return;
+        }
+
+        sortedIndices.forEach(idx => {
+            if (row.children[idx]) {
+                row.children[idx].remove();
+            }
+        });
+    });
+
+    // 4. Bersihkan sisa elemen tombol atau elemen bertanda no-print / actions-cell
+    clone.querySelectorAll('.actions-cell, .no-print, button, .btn').forEach(el => el.remove());
+
+    return clone;
+}
+
 /* ───────────────────────── CETAK (PRINT) ───────────────────────── */
 function printTable(tableId, judul) {
     const table = document.getElementById(tableId);
@@ -25,6 +84,7 @@ function printTable(tableId, judul) {
     const meta = _exportMeta();
     const win = window.open('', '_blank', 'width=1000,height=700');
     if (!win) { toast('Popup diblokir browser. Izinkan popup untuk mencetak.', 'warning'); return; }
+    const clone = _prepareTableClone(table);
     win.document.write(`<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8">
     <title>${title} — ${meta.appName}</title>
     <link href="assets/vendor/bootstrap.min.css" rel="stylesheet">
@@ -41,7 +101,7 @@ function printTable(tableId, judul) {
     <div class="print-head">
         <div><h1>${meta.appName}</h1><p>${title} — dicetak pada ${meta.dateStr}</p></div>
     </div>
-    <table class="table table-bordered table-sm">${table.innerHTML}</table>
+    <table class="table table-bordered table-sm">${clone.innerHTML}</table>
     <script>window.onload = () => { window.print(); }<\/script>
     </body></html>`);
     win.document.close();
@@ -62,23 +122,70 @@ function _ensureSheetJS(cb) {
     }
     _xlsxPromise.then(cb).catch(e => toast(e.message, 'error'));
 }
-function exportExcel(tableId, filename) {
+function exportExcel(tableId, filename, judul) {
     const table = document.getElementById(tableId);
     if (!table) { toast('Tabel tidak ditemukan untuk diekspor.', 'error'); return; }
+    const title = judul || _tableTitle(table, filename);
     _ensureSheetJS(() => {
         try {
-            const clone = table.cloneNode(true);
+            const clone = _prepareTableClone(table);
             clone.style.position = 'absolute';
             clone.style.left = '-9999px';
             clone.style.display = 'table';
-            clone.classList.remove('d-none');
-            clone.querySelectorAll('.actions-cell, .no-print').forEach(el => el.remove());
             document.body.appendChild(clone);
             
             const wb = XLSX.utils.table_to_book(clone, { raw: false });
+            const sheetName = wb.SheetNames[0];
+            const ws = wb.Sheets[sheetName];
+            
+            if (ws && ws['!ref']) {
+                const range = XLSX.utils.decode_range(ws['!ref']);
+                
+                // 1. Auto-fit lebar kolom (hitung panjang teks terpanjang + padding lega)
+                const colWidths = [];
+                for (let C = range.s.c; C <= range.e.c; ++C) {
+                    let maxLen = 10;
+                    for (let R = range.s.r; R <= range.e.r; ++R) {
+                        const cellAddr = XLSX.utils.encode_cell({ r: R, c: C });
+                        const cell = ws[cellAddr];
+                        if (cell && cell.v !== undefined && cell.v !== null) {
+                            const valStr = String(cell.v).trim();
+                            const lines = valStr.split('\n');
+                            for (const line of lines) {
+                                if (line.length > maxLen) {
+                                    maxLen = line.length;
+                                }
+                            }
+                        }
+                    }
+                    // Tambahkan ruang padding 4 karakter agar teks tidak mepet batas sel (min 12, max 60)
+                    colWidths.push({ wch: Math.min(Math.max(maxLen + 4, 12), 60) });
+                }
+                ws['!cols'] = colWidths;
+                
+                // 2. Beri tinggi baris proporsional (header lebih lega, baris data nyaman dibaca)
+                const rowHeights = [];
+                rowHeights.push({ hpt: 26 }); // Header row
+                for (let R = range.s.r + 1; R <= range.e.r; ++R) {
+                    rowHeights.push({ hpt: 20 }); // Baris data
+                }
+                ws['!rows'] = rowHeights;
+                
+                // 3. Pasang Auto-Filter pada baris Header
+                ws['!autofilter'] = { ref: ws['!ref'] };
+            }
+            
+            // 4. Beri nama sheet yang informatif (bukan Sheet1)
+            const cleanSheetName = (title || filename || 'Data').substring(0, 31).replace(/[:\\/?*\[\]]/g, ' ');
+            if (cleanSheetName && cleanSheetName !== sheetName) {
+                wb.SheetNames[0] = cleanSheetName;
+                wb.Sheets[cleanSheetName] = ws;
+                delete wb.Sheets[sheetName];
+            }
+            
             XLSX.writeFile(wb, (filename || tableId) + '.xlsx');
             clone.remove();
-            toast('Data berhasil diekspor ke Excel.', 'success');
+            toast('Data berhasil diekspor ke Excel dengan format rapi.', 'success');
         } catch (e) { toast('Gagal mengekspor Excel: ' + e.message, 'error'); }
     });
 }
@@ -111,10 +218,8 @@ function exportPDF(tableId, filename, judul) {
     const meta = _exportMeta();
     _ensureJsPDF(() => {
         try {
-            const clone = table.cloneNode(true);
+            const clone = _prepareTableClone(table);
             clone.style.display = 'table';
-            clone.classList.remove('d-none');
-            clone.querySelectorAll('.actions-cell, .no-print').forEach(el => el.remove());
             
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'landscape' });
@@ -147,7 +252,7 @@ function renderExportToolbar(mountSelector, tableId, filename, judul) {
             <button type="button" class="btn btn-outline btn-sm" onclick="printTable('${tableId}', '${(judul || '').replace(/'/g, "\\'")}')" title="Cetak">
                 <i data-lucide="printer"></i><span class="d-none d-lg-inline"> Cetak</span>
             </button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="exportExcel('${tableId}', '${filename}')" title="Ekspor Excel">
+            <button type="button" class="btn btn-outline btn-sm" onclick="exportExcel('${tableId}', '${filename}', '${(judul || '').replace(/'/g, "\\'")}')" title="Ekspor Excel">
                 <i data-lucide="file-spreadsheet"></i><span class="d-none d-lg-inline"> Excel</span>
             </button>
             <button type="button" class="btn btn-outline btn-sm" onclick="exportPDF('${tableId}', '${filename}', '${(judul || '').replace(/'/g, "\\'")}')" title="Ekspor PDF">

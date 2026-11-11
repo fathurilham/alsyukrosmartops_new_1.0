@@ -16,6 +16,12 @@ if ($action === 'ganti_password') {
         echo json_encode(['ok' => false, 'msg' => 'Semua kolom wajib diisi.']);
         exit();
     }
+
+    if (!validatePassword($newPass)) {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'msg' => 'Password minimal 8 karakter dan harus mengandung huruf serta angka.']);
+        exit();
+    }
     
     global $conn;
     $stmt = $conn->prepare("SELECT password FROM users WHERE id=?");

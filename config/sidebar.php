@@ -9,7 +9,7 @@ function renderSidebar($currentPage = '') {
     $modules = getRoleModules($user['role']);
 
     // Urutan tampil menu sesuai urutan modul pada dokumen (Bab 2.1 Model 1)
-    $order = ['inventaris', 'karyawan', 'event', 'maintenance', 'arsip', 'laporan'];
+    $order = ['inventaris', 'karyawan', 'event', 'maintenance', 'arsip', 'laporan', 'log_aktivitas'];
     usort($modules, fn($a, $b) => array_search($a, $order) <=> array_search($b, $order));
     ?>
     <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>

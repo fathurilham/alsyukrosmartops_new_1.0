@@ -1,0 +1,9 @@
+Options -Indexes
+
+# Blokir akses langsung ke folder .git dan berkas sensitif
+RedirectMatch 404 /\.git
+
+<FilesMatch "\.(sql|bak|env|log)$">
+    Require all denied
+</FilesMatch>
+

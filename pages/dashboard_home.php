@@ -15,17 +15,36 @@ if (in_array('event', $modules)) {
     $cards[] = ['icon' => 'calendar', 'color' => '#2f6690', 'label' => 'Event Aktif', 'value' => $n, 'link' => 'event'];
 }
 if (in_array('karyawan', $modules)) {
-    $n = $conn->query("SELECT COUNT(*) n FROM kegiatan_karyawan WHERE status!='selesai'")->fetch_assoc()['n'];
-    $cards[] = ['icon' => 'users', 'color' => '#6a4fa0', 'label' => 'Kegiatan Karyawan Berjalan', 'value' => $n, 'link' => 'karyawan'];
+    if (isHrdAdministratifRole($user)) {
+        $pimFilterDash = getPimpinanExclusionSql($user, '');
+        $n = $conn->query("SELECT COUNT(*) n FROM karyawan WHERE status='aktif' AND ($pimFilterDash)")->fetch_assoc()['n'];
+        $cards[] = ['icon' => 'users', 'color' => '#6a4fa0', 'label' => 'Total Karyawan Aktif', 'value' => $n, 'link' => 'karyawan'];
+    } else {
+        $n = $conn->query("SELECT COUNT(*) n FROM kegiatan_karyawan kk JOIN karyawan k ON k.id = kk.karyawan_id WHERE kk.status!='selesai' AND LOWER(TRIM(k.jabatan)) IN ('cso', 'gardener')")->fetch_assoc()['n'];
+        $cards[] = ['icon' => 'users', 'color' => '#6a4fa0', 'label' => 'Kegiatan Karyawan Berjalan', 'value' => $n, 'link' => 'karyawan'];
+    }
 }
 if (in_array('arsip', $modules)) {
     $n = $conn->query("SELECT COUNT(*) n FROM arsip")->fetch_assoc()['n'];
     $cards[] = ['icon' => 'archive', 'color' => '#1f7a6c', 'label' => 'Total Dokumen Arsip', 'value' => $n, 'link' => 'arsip'];
 }
 
-
-$logs = $conn->prepare("SELECT l.*, u.name FROM log_aktivitas l JOIN users u ON u.id=l.user_id WHERE l.id IN (SELECT MAX(id) FROM log_aktivitas GROUP BY modul) ORDER BY l.id DESC LIMIT 8");
-$logs->execute();
+if ($role === 'admin') {
+    $logs = $conn->prepare("SELECT l.*, COALESCE(u.name, l.nama_user, 'Pengguna Dihapus') AS name 
+                           FROM log_aktivitas l 
+                           LEFT JOIN users u ON u.id = l.user_id 
+                           WHERE l.id IN (SELECT MAX(id) FROM log_aktivitas GROUP BY modul) 
+                           ORDER BY l.id DESC LIMIT 8");
+    $logs->execute();
+} else {
+    $logs = $conn->prepare("SELECT l.*, COALESCE(u.name, l.nama_user, 'Pengguna Dihapus') AS name 
+                           FROM log_aktivitas l 
+                           LEFT JOIN users u ON u.id = l.user_id 
+                           WHERE l.user_id = ? 
+                           ORDER BY l.id DESC LIMIT 8");
+    $logs->bind_param("i", $user['id']);
+    $logs->execute();
+}
 $recentLogs = $logs->get_result()->fetch_all(MYSQLI_ASSOC);
 ?>
 <div class="stat-grid">
@@ -65,8 +84,24 @@ $recentLogs = $logs->get_result()->fetch_all(MYSQLI_ASSOC);
             <thead><tr><th>Waktu</th><th>Pengguna</th><th>Modul</th><th>Aktivitas</th></tr></thead>
             <tbody>
             <?php if (!$recentLogs): ?><tr><td colspan="4" class="empty-row">Belum ada aktivitas tercatat.</td></tr><?php endif; ?>
-            <?php foreach ($recentLogs as $l): ?>
-                <tr><td><?= htmlspecialchars($l['waktu']) ?></td><td><?= htmlspecialchars($l['name']) ?></td><td><?= htmlspecialchars($l['modul']) ?></td><td><?= htmlspecialchars($l['aktivitas']) ?></td></tr>
+            <?php 
+            $modulLabels = [
+                'karyawan' => 'Karyawan',
+                'karyawan_kinerja' => 'Kinerja Karyawan',
+                'inventaris' => 'Inventaris',
+                'event' => 'Event',
+                'maintenance' => 'Maintenance',
+                'arsip' => 'Arsip',
+                'pengajuan_unit' => 'Pengajuan Unit',
+                'laporan' => 'Laporan',
+                'akun' => 'Akun Pengguna',
+                'auth' => 'Autentikasi',
+                'log_aktivitas' => 'Log Aktivitas'
+            ];
+            foreach ($recentLogs as $l): 
+                $modulName = $modulLabels[$l['modul']] ?? ucfirst(str_replace('_', ' ', $l['modul']));
+            ?>
+                <tr><td><?= htmlspecialchars($l['waktu']) ?></td><td><?= htmlspecialchars($l['name']) ?></td><td><?= htmlspecialchars($modulName) ?></td><td><?= htmlspecialchars($l['aktivitas']) ?></td></tr>
             <?php endforeach; ?>
             </tbody>
         </table>

@@ -1,19 +1,19 @@
 <?php
 $modules = getRoleModules($role);
 $data = [];
-if (in_array('inventaris', $modules)) {
+if (in_array('inventaris', $modules) && !in_array($role, ['manajer_markom', 'manajer_qms'], true)) {
     $data['Inventaris'] = $conn->query("SELECT status, COUNT(*) n FROM peminjaman GROUP BY status")->fetch_all(MYSQLI_ASSOC);
 }
-if (in_array('maintenance', $modules)) {
+if (in_array('maintenance', $modules) && !in_array($role, ['manajer_markom', 'manajer_qms'], true)) {
     $data['Maintenance'] = $conn->query("SELECT status, COUNT(*) n FROM pengajuan_maintenance GROUP BY status")->fetch_all(MYSQLI_ASSOC);
 }
-if (in_array('event', $modules)) {
+if (in_array('event', $modules) && $role !== 'manajer_qms') {
     $data['Event'] = $conn->query("SELECT status, COUNT(*) n FROM event GROUP BY status")->fetch_all(MYSQLI_ASSOC);
 }
-if (in_array('karyawan', $modules)) {
-    $data['Kegiatan Karyawan'] = $conn->query("SELECT status, COUNT(*) n FROM kegiatan_karyawan GROUP BY status")->fetch_all(MYSQLI_ASSOC);
+if (in_array('karyawan', $modules) && !isHrdAdministratifRole($user) && !in_array($role, ['manajer_markom', 'manajer_qms'], true)) {
+    $data['Kegiatan Karyawan'] = $conn->query("SELECT kk.status, COUNT(*) n FROM kegiatan_karyawan kk JOIN karyawan k ON k.id = kk.karyawan_id WHERE LOWER(TRIM(k.jabatan)) IN ('cso', 'gardener') GROUP BY kk.status")->fetch_all(MYSQLI_ASSOC);
 }
-if (in_array('arsip', $modules)) {
+if (in_array('arsip', $modules) && hasAccess($role, 'arsip', 'monitoring') && $role !== 'manajer_markom') {
     $data['Arsip'] = $conn->query("SELECT tingkat_akses AS status, COUNT(*) n FROM arsip GROUP BY tingkat_akses")->fetch_all(MYSQLI_ASSOC);
 }
 ?>

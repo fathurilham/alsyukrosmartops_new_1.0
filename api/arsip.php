@@ -77,18 +77,45 @@ switch ($action) {
     case 'backup':
         if (!hasAccess($role, 'arsip', 'kelola')) fail('Akses ditolak.');
         $arsipId = (int)($_POST['arsip_id'] ?? 0);
-        $a = $conn->query("SELECT * FROM arsip WHERE id=$arsipId")->fetch_assoc();
+        $stmtArsip = $conn->prepare("SELECT * FROM arsip WHERE id = ?");
+        $stmtArsip->bind_param("i", $arsipId);
+        $stmtArsip->execute();
+        $a = $stmtArsip->get_result()->fetch_assoc();
         if (!$a) fail('Dokumen tidak ditemukan.');
-        $lokasi = 'backups/arsip_' . $arsipId . '_' . date('Ymd_His') . '.bak';
+        $sourceRel = $a['file_path'];
+        $sourcePath = __DIR__ . '/../' . $sourceRel;
+        if (!file_exists($sourcePath) || !is_file($sourcePath)) {
+            fail('Berkas fisik dokumen tidak ditemukan di server.');
+        }
+
+        $backupDir = __DIR__ . '/../backups';
+        if (!is_dir($backupDir)) {
+            if (!mkdir($backupDir, 0755, true)) {
+                fail('Gagal membuat folder backups/ di server.');
+            }
+        }
+        $htaccessBackup = $backupDir . '/.htaccess';
+        if (!file_exists($htaccessBackup)) {
+            @file_put_contents($htaccessBackup, "Require all denied\n");
+        }
+
+        $filename = 'arsip_' . $arsipId . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(8)) . '.bak';
+        $targetPath = $backupDir . '/' . $filename;
+        $lokasi = 'backups/' . $filename;
+
+        if (!copy($sourcePath, $targetPath)) {
+            fail('Gagal menyalin berkas ke folder backups/.');
+        }
+
         $stmt = $conn->prepare("INSERT INTO backup_arsip (arsip_id, lokasi_backup) VALUES (?,?)");
         $stmt->bind_param("is", $arsipId, $lokasi);
         $stmt->execute();
-        logAktivitas($user['id'], 'arsip', "Backup dokumen #$arsipId");
+        logAktivitas($user['id'], 'arsip', "Backup dokumen #$arsipId ($lokasi)");
         ok(['lokasi' => $lokasi]);
 
     case 'list_backup':
         if (!hasAccess($role, 'arsip', 'kelola')) fail('Akses ditolak.');
-        $sql = "SELECT b.*, a.judul_dokumen FROM backup_arsip b LEFT JOIN arsip a ON a.id=b.arsip_id ORDER BY b.id DESC";
+        $sql = "SELECT b.*, a.judul_dokumen, a.tingkat_akses, a.uploader_id FROM backup_arsip b LEFT JOIN arsip a ON a.id=b.arsip_id ORDER BY b.id DESC";
         ok($conn->query($sql)->fetch_all(MYSQLI_ASSOC));
 
     default:
