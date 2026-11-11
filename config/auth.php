@@ -349,23 +349,25 @@ function requireLogin() {
 function getCurrentUser() {
     global $conn;
     if (!isLoggedIn()) return null;
-    static $cached = null;
-    if ($cached !== null) return $cached;
+    static $cached = [];
+    $uid = (int)$_SESSION['user_id'];
+    if (isset($cached[$uid])) return $cached[$uid];
     $stmt = $conn->prepare("SELECT u.*, r.kode AS role, r.nama_role, su.nama_unit, su.tipe AS unit_tipe
                              FROM users u
                              JOIN roles r ON r.id = u.role_id
                              LEFT JOIN struktur_unit su ON su.id = u.unit_id
                              WHERE u.id=?");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->bind_param("i", $uid);
     $stmt->execute();
-    $cached = $stmt->get_result()->fetch_assoc();
+    $userRow = $stmt->get_result()->fetch_assoc();
     
-    if (!$cached || $cached['status'] !== 'aktif' || isAccountLocked($cached)) {
-        removeUserSession($_SESSION['user_id'] ?? 0);
+    if (!$userRow || $userRow['status'] !== 'aktif' || isAccountLocked($userRow)) {
+        removeUserSession($uid);
         terminateInvalidSession('Sesi tidak valid atau akun dinonaktifkan.');
     }
     
-    return $cached;
+    $cached[$uid] = $userRow;
+    return $userRow;
 }
 
 function validatePassword($password) {
@@ -426,9 +428,13 @@ function requireAccess($modul, $aksi) {
 /** Daftar modul yang BISA DILIHAT oleh sebuah role (untuk sidebar & dashboard). */
 function getRoleModules($role) {
     $matrix = getRoleAccessMatrix($role);
+    $user = getCurrentUser();
     $modules = [];
     foreach ($matrix as $m => $aksiList) {
         if ($m !== 'pengajuan_unit' && in_array('lihat', $aksiList, true)) {
+            if ($m === 'karyawan' && $user && !canAccessKaryawanModule($user)) {
+                continue;
+            }
             $modules[] = $m;
         }
     }
@@ -1303,7 +1309,7 @@ function canViewAllKaryawan($user) {
 }
 
 /** Mendapatkan daftar ID karyawan yang dapat diakses oleh user saat ini. Mengembalikan null jika tanpa batas (lihat semua). */
-function getAccessibleKaryawanIds($user) {
+function getAccessibleKaryawanIds($user, $includeSelf = false) {
     if (canViewAllKaryawan($user)) {
         return null;
     }
@@ -1311,7 +1317,23 @@ function getAccessibleKaryawanIds($user) {
     if (!$kar) {
         return [];
     }
-    return getSubordinateKaryawanIds($kar['id'], true);
+    return getSubordinateKaryawanIds($kar['id'], $includeSelf);
+}
+
+/**
+ * Mengecek apakah user relevan untuk mengakses modul Manajemen Karyawan:
+ * - Admin & HRD (pengelola master data karyawan)
+ * - CSO & Gardener (pelaksana tugas rutin harian & penerima penilaian)
+ * - Atasan yang memiliki minimal 1 bawahan di tabel karyawan
+ */
+function canAccessKaryawanModule($user) {
+    if (!$user) return false;
+    $role = $user['role'] ?? '';
+    if (!hasAccess($role, 'karyawan', 'lihat')) return false;
+    if (canViewAllKaryawanAdministratif($user) || hasAccess($role, 'karyawan', 'penilaian')) return true;
+    if (in_array($role, ['cso', 'gardener'], true) || hasAccess($role, 'karyawan', 'tugas_rutin_sendiri')) return true;
+    $subIds = getAccessibleKaryawanIds($user, false);
+    return $subIds === null || !empty($subIds);
 }
 
 /**

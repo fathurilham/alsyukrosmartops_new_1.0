@@ -82,7 +82,7 @@ function generateNextNipByPrefix($conn, $prefix, $useLock = false) {
     return sprintf('%s-%04d', $prefix, $maxNum + 1);
 }
 
-if (!hasAccess($role, 'karyawan', 'lihat')) {
+if (!hasAccess($role, 'karyawan', 'lihat') || !canAccessKaryawanModule($user)) {
     forbidden('Anda tidak memiliki hak akses ke modul Manajemen Karyawan.');
 }
 
@@ -1178,7 +1178,7 @@ switch ($action) {
         if (canViewAllKaryawan($user) || hasAccess($role, 'karyawan', 'penilaian')) {
             $where = $pelaksanaFilter;
         } else {
-            $accessibleIds = getAccessibleKaryawanIds($user);
+            $accessibleIds = getAccessibleKaryawanIds($user, true);
             if (empty($accessibleIds)) {
                 ok([]);
             }

@@ -36,6 +36,7 @@ if ($myKar) {
 }
 $canBeriTugas = ($canMonitoring || ($canKelola && $hasBawahan)) && !$isHRD && !$isPelaksanaOnly;
 $canBeriPenilaian = $canPenilaian && !$isHRD;
+$hasPelaksanaScope = ($isPelaksanaOnly || $canMonitoring || $canPenilaian || $hasBawahan) && !$isHRD;
 
 if ($isHRD) {
     // HRD: Statistik administratif saja (tanpa data tugas/kegiatan & penilaian, serta sesuai hak lihat_pimpinan)
@@ -89,7 +90,7 @@ if ($isHRD) {
         <h3 id="statTotalJabatan"><?= $totalJabatan ?></h3>
         <p>Jenis Jabatan</p>
     </div>
-    <?php else: ?>
+    <?php elseif ($hasPelaksanaScope): ?>
     <div class="stat-card">
         <div class="stat-icon" style="background:#a97c22"><i data-lucide="loader"></i></div>
         <h3><?= $totalKegiatanProses ?></h3>
@@ -138,13 +139,13 @@ if ($isHRD) {
         <?php if (!$isPelaksanaOnly): ?>
         <button class="tab-btn active" id="tabBtnKaryawan" onclick="switchKaryawanTab('tabKaryawan')"><i data-lucide="users" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px"></i> Data Karyawan</button>
         <?php endif; ?>
-        <?php if (!$isHRD): ?>
+        <?php if ($hasPelaksanaScope): ?>
         <button class="tab-btn <?= $isPelaksanaOnly ? 'active' : '' ?>" id="tabBtnKegiatan" onclick="switchKaryawanTab('tabKegiatan')"><i data-lucide="clipboard-check" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px"></i> <?= $isPelaksanaOnly ? 'Tugas Rutin Harian Saya' : 'Kegiatan & Monitoring Karyawan' ?></button>
         <?php endif; ?>
-        <?php if (!$isPelaksanaOnly): ?>
+        <?php if (!$isPelaksanaOnly && ($isHRD || $hasPelaksanaScope)): ?>
         <button class="tab-btn" id="tabBtnRekap" onclick="switchKaryawanTab('tabRekap')"><i data-lucide="bar-chart-2" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px"></i> Rekap Karyawan</button>
         <?php endif; ?>
-        <?php if (!$isHRD): ?>
+        <?php if ($hasPelaksanaScope): ?>
         <button class="tab-btn" id="tabBtnPenilaian" onclick="switchKaryawanTab('tabPenilaian')"><i data-lucide="star" style="width:15px;height:15px;vertical-align:-2px;margin-right:4px"></i> Penilaian Kinerja</button>
         <?php endif; ?>
     </div>

@@ -20,7 +20,7 @@ $pageModuleMap = [
 
 if ($page !== 'dashboard' && $page !== 'akun') {
     $modul = $pageModuleMap[$page] ?? null;
-    if (!$modul || !hasAccess($user['role'], $modul, 'lihat')) {
+    if (!$modul || !hasAccess($user['role'], $modul, 'lihat') || ($modul === 'karyawan' && !canAccessKaryawanModule($user))) {
         http_response_code(403);
         $page = 'forbidden';
     }
