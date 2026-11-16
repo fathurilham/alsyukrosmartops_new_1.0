@@ -1,4 +1,7 @@
 <?php
+if (!function_exists('esc')) {
+    function esc($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+}
 $currentUser = getCurrentUser();
 $canLihat = hasAccess($role, 'karyawan', 'lihat');
 $canTambah = hasAccess($role, 'karyawan', 'tambah');
@@ -204,7 +207,7 @@ if ($isHRD) {
                     <div style="font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600">Pelaksana Operasional Mandiri</div>
                     <h3 style="margin:2px 0;font-size:17px;color:var(--primary);font-weight:700"><?= esc($myKar['nama'] ?? $currentUser['name']) ?> — <span class="badge b-gray" style="font-size:12px;font-weight:600"><?= esc($myKar['jabatan'] ?? strtoupper($role)) ?></span></h3>
                     <div style="font-size:12.5px;color:var(--text);margin-top:4px;display:flex;gap:16px;flex-wrap:wrap">
-                        <span><i data-lucide="calendar" style="width:13px;height:13px;vertical-align:-2px;color:var(--primary)"></i> Tanggal: <strong><?= date('d M Y') ?></strong></span>
+                        <span><i data-lucide="calendar" style="width:13px;height:13px;vertical-align:-2px;color:var(--primary)"></i> Tanggal: <strong><?= periodeIndonesia('d M Y') ?></strong></span>
                         <span><i data-lucide="clock" style="width:13px;height:13px;vertical-align:-2px;color:var(--gold)"></i> Pengisian Buka: <strong>04:30 WIB</strong></span>
                         <span><i data-lucide="log-out" style="width:13px;height:13px;vertical-align:-2px;color:var(--danger)"></i> Jam Pulang: <strong><?= $jamPulangSaya ?> WIB</strong></span>
                     </div>
@@ -237,23 +240,68 @@ if ($isHRD) {
             </div>
         </div>
 
-        <div class="table-wrap">
-            <table class="dtable table table-hover align-middle mb-0" id="tblKegiatan">
-                <thead>
-                    <tr>
-                        <th style="width:115px">Jadwal & Jam</th>
-                        <th style="text-align:center;width:80px">Jenis</th>
-                        <th>Deskripsi Tugas Rutin</th>
-                        <th style="text-align:center;width:140px">Foto Bukti</th>
-                        <th style="text-align:center;width:110px">Status</th>
-                        <th style="text-align:center;width:140px">Status Nilai Harian</th>
-                        <th class="no-print" style="text-align:center;width:115px">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody id="kegiatanBody">
-                    <tr><td colspan="7" class="empty-row">Memuat tugas rutin harian Anda...</td></tr>
-                </tbody>
-            </table>
+        <!-- ── BAGIAN 1: TUGAS RUTIN HARIAN (MANDIRI) ── -->
+        <div class="card" style="margin-bottom:20px;border:1px solid var(--border);box-shadow:none">
+            <div class="card-head" style="padding:12px 16px;background:#fbfaf6;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="font-size:14px;margin:0;color:var(--primary);display:flex;align-items:center;gap:6px">
+                        <i data-lucide="check-square" style="width:16px;height:16px"></i>
+                        Tugas Rutin Harian Saya (Mandiri)
+                    </h3>
+                    <p style="margin:2px 0 0;font-size:11.5px;color:var(--muted)">Tugas rutin harian yang Anda kelola sendiri. Wajib diisi foto bukti saat selesai.</p>
+                </div>
+                <div id="badgeCountRutinSaya"></div>
+            </div>
+            <div class="table-wrap">
+                <table class="dtable table table-hover align-middle mb-0" id="tblKegiatan">
+                    <thead>
+                        <tr>
+                            <th style="width:115px">Jadwal & Jam</th>
+                            <th style="text-align:center;width:80px">Jenis</th>
+                            <th>Deskripsi Tugas Rutin</th>
+                            <th style="text-align:center;width:140px">Foto Bukti</th>
+                            <th style="text-align:center;width:110px">Status</th>
+                            <th style="text-align:center;width:140px">Status Nilai Harian</th>
+                            <th class="no-print" style="text-align:center;width:115px">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kegiatanBody">
+                        <tr><td colspan="7" class="empty-row">Memuat tugas rutin harian Anda...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ── BAGIAN 2: TUGAS NON-RUTIN DARI ATASAN ── -->
+        <div class="card" style="margin-bottom:20px;border:1px solid var(--border);box-shadow:none">
+            <div class="card-head" style="padding:12px 16px;background:#fbfaf6;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+                <div>
+                    <h3 style="font-size:14px;margin:0;color:#5f3d95;display:flex;align-items:center;gap:6px">
+                        <i data-lucide="layers" style="width:16px;height:16px"></i>
+                        Tugas Non-Rutin dari Atasan (Tugas Khusus / Insidental)
+                    </h3>
+                    <p style="margin:2px 0 0;font-size:11.5px;color:var(--muted)">Tugas khusus yang diberikan Team Leader atau SPV Sapras. Laporkan hasil dan bukti foto pengerjaan di sini.</p>
+                </div>
+                <div id="badgeCountNonRutinSaya"></div>
+            </div>
+            <div class="table-wrap">
+                <table class="dtable table table-hover align-middle mb-0" id="tblPelaksanaNonRutin">
+                    <thead>
+                        <tr>
+                            <th style="width:125px">Jadwal & Tenggat</th>
+                            <th style="text-align:center;width:85px">Jenis</th>
+                            <th>Deskripsi Tugas Khusus</th>
+                            <th style="width:130px">Pemberi Tugas</th>
+                            <th style="text-align:center;width:105px">Status</th>
+                            <th>Laporan Hasil & Bukti</th>
+                            <th class="no-print" style="text-align:center;width:125px">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pelaksanaNonRutinBody">
+                        <tr><td colspan="7" class="empty-row">Memuat tugas non-rutin dari atasan...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     <?php else: ?>
@@ -656,7 +704,7 @@ if ($isHRD) {
             <div style="background:#f4f9f4;border:1px solid #c2e2c8;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text)">
                 <div style="display:flex;align-items:center;gap:8px;font-weight:600;color:var(--primary);margin-bottom:4px">
                     <i data-lucide="calendar" style="width:15px;height:15px"></i>
-                    <span>Tugas Rutin untuk Hari Ini: <?= date('d M Y') ?></span>
+                    <span>Tugas Rutin untuk Hari Ini: <?= periodeIndonesia('d M Y') ?></span>
                 </div>
                 <div style="color:var(--muted);font-size:11.5px">Ketik bebas deskripsi pekerjaan Anda hari ini. Menandai tugas status <strong>Selesai</strong> WAJIB melampirkan minimal 1 foto bukti dokumentasi (maksimal 3 foto).</div>
             </div>
@@ -860,7 +908,7 @@ if ($isHRD) {
             <div class="form-grid">
                 <div class="fld">
                     <label>Periode Penilaian <span style="color:var(--danger)">*</span></label>
-                    <input type="text" id="pnPeriode" placeholder="Contoh: Oktober 2026" value="<?= date('F Y') ?>">
+                    <input type="text" id="pnPeriode" placeholder="Contoh: Oktober 2026" value="<?= periodeIndonesia('F Y') ?>">
                 </div>
                 <div class="fld">
                     <label>Skor Nilai (1 - 5) <span style="color:var(--danger)">*</span></label>
@@ -1176,14 +1224,7 @@ async function loadDropdowns() {
     }
 
     // User options
-    const selUser = document.getElementById('kUser');
-    if (selUser) {
-        let optUsers = '<option value="">-- Tanpa Akun Login --</option>';
-        (dropdownOptions.users || []).forEach(u => {
-            optUsers += `<option value="${u.id}">${esc(u.name)} (@${esc(u.username)})</option>`;
-        });
-        selUser.innerHTML = optUsers;
-    }
+    renderUserOptionsKaryawan();
 
     // Karyawan pelaksana untuk penugasan non-rutin
     const selKgKar = document.getElementById('kgKaryawan');
@@ -1375,6 +1416,28 @@ function filterDataKaryawan() {
     renderTabelKaryawan(filtered);
 }
 
+function renderUserOptionsKaryawan(selectedUserId = null, currentUserName = '', currentUsername = '') {
+    const selUser = document.getElementById('kUser');
+    if (!selUser) return;
+    let optUsers = '<option value="">-- Tanpa Akun Login --</option>';
+    let currentInList = false;
+    (dropdownOptions.users || []).forEach(u => {
+        const isSel = selectedUserId && Number(u.id) === Number(selectedUserId);
+        if (isSel) currentInList = true;
+        optUsers += `<option value="${u.id}" ${isSel ? 'selected' : ''}>${esc(u.name)} (@${esc(u.username)})</option>`;
+    });
+    if (selectedUserId && !currentInList) {
+        const label = currentUserName ? `${currentUserName}${currentUsername ? ` (@${currentUsername})` : ''}` : `User #${selectedUserId}`;
+        optUsers += `<option value="${selectedUserId}" selected>${esc(label)} (Akun saat ini)</option>`;
+    }
+    selUser.innerHTML = optUsers;
+    if (selectedUserId) {
+        selUser.value = selectedUserId;
+    } else {
+        selUser.value = '';
+    }
+}
+
 function bukaModalKaryawan() {
     document.getElementById('modalKaryawanTitle').textContent = 'Tambah Karyawan Baru';
     document.getElementById('kId').value = '';
@@ -1387,7 +1450,7 @@ function bukaModalKaryawan() {
     document.getElementById('kTanggalMasuk').value = '';
     document.getElementById('kKontak').value = '';
     document.getElementById('kAtasan').value = '';
-    document.getElementById('kUser').value = '';
+    renderUserOptionsKaryawan(null);
     document.getElementById('kStatusWrapper').style.display = 'none';
     const hintNip = document.getElementById('hintNipAuto');
     if (hintNip) hintNip.style.display = 'block';
@@ -1445,7 +1508,7 @@ function bukaEditKaryawan(id) {
     document.getElementById('kTanggalMasuk').value = k.tanggal_masuk || '';
     document.getElementById('kKontak').value = k.kontak || '';
     document.getElementById('kAtasan').value = k.atasan_id || '';
-    document.getElementById('kUser').value = k.user_id || '';
+    renderUserOptionsKaryawan(k.user_id, k.nama_user || k.nama, k.username || '');
     document.getElementById('kStatus').value = k.status || 'aktif';
     document.getElementById('kStatusWrapper').style.display = 'block';
 
@@ -1651,6 +1714,10 @@ function removeExistingRutinFoto(idx) {
 }
 
 function bukaModalTugasRutinSaya(editTask = null) {
+    if (editTask && editTask.jenis !== 'rutin') {
+        toast('Tugas non-rutin hanya dapat dilaporkan hasilnya melalui tombol Laporkan Hasil.', 'warning');
+        return;
+    }
     const timeNow = getJakartaTimeNow();
     if (!editTask && timeNow < JAM_MULAI_RUTIN) {
         toast(`Pengisian tugas rutin mandiri dibuka mulai pukul ${JAM_MULAI_RUTIN} WIB. (Waktu saat ini: ${timeNow} WIB)`, 'warning');
@@ -2190,55 +2257,117 @@ function renderTabelKegiatan(list) {
     const kgLabel = { ditugaskan: 'Ditugaskan', dikerjakan: 'Dikerjakan', selesai: 'Selesai' };
 
     if (IS_PELAKSANA_ONLY) {
-        if (!list.length) {
-            document.getElementById('kegiatanBody').innerHTML = '<tr><td colspan="7" class="empty-row">Belum ada tugas rutin yang dibuat.</td></tr>';
-            return;
+        const listRutin = list.filter(t => t.jenis === 'rutin');
+        const listNonRutin = list.filter(t => t.jenis === 'non-rutin');
+
+        // Update badge counts jika elemen tersedia
+        const bRutin = document.getElementById('badgeCountRutinSaya');
+        if (bRutin) {
+            const doneRutin = listRutin.filter(t => t.status === 'selesai').length;
+            bRutin.innerHTML = `<span class="badge b-teal" style="font-size:11.5px">${doneRutin} / ${listRutin.length} Selesai</span>`;
+        }
+        const bNonRutin = document.getElementById('badgeCountNonRutinSaya');
+        if (bNonRutin) {
+            const doneNonRutin = listNonRutin.filter(t => t.status === 'selesai').length;
+            bNonRutin.innerHTML = `<span class="badge b-purple" style="font-size:11.5px">${doneNonRutin} / ${listNonRutin.length} Selesai</span>`;
         }
 
-        const html = list.map(t => {
-            const isToday = (t.tanggal === todayStr);
-            const isLocked = Boolean(t.is_locked);
-            const isEditable = isToday && !isLocked;
+        // 1. Render Tabel Tugas Rutin Harian (Mandiri)
+        if (!listRutin.length) {
+            document.getElementById('kegiatanBody').innerHTML = '<tr><td colspan="7" class="empty-row">Belum ada tugas rutin yang dibuat.</td></tr>';
+        } else {
+            const htmlRutin = listRutin.map(t => {
+                const isToday = (t.tanggal === todayStr);
+                const isLocked = Boolean(t.is_locked);
+                const isEditable = isToday && !isLocked;
 
-            let jamHtml = `<div><strong>${esc(t.tanggal)}</strong></div>`;
-            if (t.jam) {
-                jamHtml += `<div style="font-size:11px;color:var(--muted);margin-top:2px"><i data-lucide="clock" style="width:10px;height:10px;vertical-align:-1px"></i> ${esc(t.jam.substring(0,5))} WIB</div>`;
-            }
+                let jamHtml = `<div><strong>${esc(t.tanggal)}</strong></div>`;
+                if (t.jam) {
+                    jamHtml += `<div style="font-size:11px;color:var(--muted);margin-top:2px"><i data-lucide="clock" style="width:10px;height:10px;vertical-align:-1px"></i> ${esc(t.jam.substring(0,5))} WIB</div>`;
+                }
 
-            const fotosHtml = renderGaleriThumbnailsHtml(t.fotos, t.deskripsi, t.karyawan_nama);
+                const fotosHtml = renderGaleriThumbnailsHtml(t.fotos, t.deskripsi, t.karyawan_nama);
 
-            let statusHarianHtml = '';
-            if (isLocked) {
-                statusHarianHtml = `<span class="badge b-blue" style="font-size:11px"><i data-lucide="lock" style="width:10px;height:10px;vertical-align:-1px"></i> Terkunci (${t.nilai_harian || '-'}/5)</span>`;
-            } else if (isToday) {
-                statusHarianHtml = '<span class="badge b-yellow" style="font-size:11px">Hari Ini</span>';
+                let statusHarianHtml = '';
+                if (isLocked) {
+                    statusHarianHtml = `<span class="badge b-blue" style="font-size:11px"><i data-lucide="lock" style="width:10px;height:10px;vertical-align:-1px"></i> Terkunci (${t.nilai_harian || '-'}/5)</span>`;
+                } else if (isToday) {
+                    statusHarianHtml = '<span class="badge b-yellow" style="font-size:11px">Hari Ini</span>';
+                } else {
+                    statusHarianHtml = '<span class="badge b-gray" style="font-size:11px">Belum Dinilai</span>';
+                }
+
+                let aksi = '';
+                if (isEditable) {
+                    const tJson = esc(JSON.stringify(t));
+                    aksi = `
+                        <button class="btn btn-outline btn-sm btn-icon" onclick='bukaModalTugasRutinSaya(${tJson})' title="Edit / Update Tugas"><i data-lucide="edit-3"></i></button>
+                        <button class="btn btn-danger btn-sm btn-icon" onclick="hapusKegiatan(${t.id})" title="Hapus Tugas"><i data-lucide="trash-2"></i></button>
+                    `;
+                } else {
+                    aksi = `<span class="badge b-gray" style="font-size:11px"><i data-lucide="lock" style="width:11px;height:11px;vertical-align:-1px"></i> Terkunci</span>`;
+                }
+
+                return `<tr>
+                    <td style="white-space:nowrap">${jamHtml}</td>
+                    <td style="text-align:center"><span class="badge b-teal" style="font-size:11px">Rutin</span></td>
+                    <td><div style="line-height:1.45;font-size:13px;color:var(--text);font-weight:500;max-width:320px">${esc(t.deskripsi)}</div></td>
+                    <td style="text-align:center">${fotosHtml}</td>
+                    <td style="text-align:center"><span class="badge ${kgBadge[t.status] || 'b-gray'}">${kgLabel[t.status] || t.status}</span></td>
+                    <td style="text-align:center">${statusHarianHtml}</td>
+                    <td class="actions-cell no-print" style="justify-content:center">${aksi}</td>
+                </tr>`;
+            }).join('');
+
+            updateDOM('kegiatanBody', htmlRutin);
+        }
+
+        // 2. Render Tabel Tugas Non-Rutin dari Atasan (Hanya Lapor Hasil / Bukti, TANPA tombol edit & TANPA hapus)
+        const elNonRutin = document.getElementById('pelaksanaNonRutinBody');
+        if (elNonRutin) {
+            if (!listNonRutin.length) {
+                elNonRutin.innerHTML = '<tr><td colspan="7" class="empty-row">Belum ada tugas non-rutin dari atasan.</td></tr>';
             } else {
-                statusHarianHtml = '<span class="badge b-gray" style="font-size:11px">Belum Dinilai</span>';
+                const htmlNonRutin = listNonRutin.map(t => {
+                    let jadwalHtml = `<div><strong>${esc(t.tanggal)}</strong></div>`;
+                    if (t.jam) {
+                        jadwalHtml += `<div style="font-size:11px;color:var(--muted);margin-top:2px"><i data-lucide="clock" style="width:10px;height:10px;vertical-align:-1px"></i> ${esc(t.jam.substring(0,5))} WIB</div>`;
+                    }
+                    if (t.tenggat) {
+                        const isOverdue = (t.status !== 'selesai' && t.tenggat < todayStr) || 
+                                          (t.status === 'selesai' && t.selesai_pada && t.selesai_pada.substring(0, 10) > t.tenggat);
+                        jadwalHtml += `<div style="font-size:11px;margin-top:2px;color:${isOverdue ? 'var(--danger)' : 'var(--muted)'};font-weight:${isOverdue ? '600' : 'normal'}">
+                            <i data-lucide="calendar" style="width:10px;height:10px;vertical-align:-1px"></i> Tgt: ${esc(t.tenggat)} ${isOverdue ? '<span class="badge b-red" style="font-size:9.5px;padding:1px 4px">Terlambat</span>' : ''}
+                        </div>`;
+                    }
+
+                    const fotosHtml = renderGaleriThumbnailsHtml(t.fotos, t.deskripsi, t.karyawan_nama);
+
+                    // Aksi HANYA Lapor Hasil / Bukti, TANPA tombol edit deskripsi & TANPA hapus
+                    const aksi = `<button class="btn btn-outline btn-sm" onclick="bukaUpdateKegiatan(${t.id}, '${esc(t.status)}', '${esc(t.deskripsi)}', '${esc(t.hasil_laporan)}', '${esc(t.foto_laporan || '')}')"><i data-lucide="check-square"></i> Laporkan Hasil</button>`;
+
+                    let laporanHtml = '';
+                    if (t.hasil_laporan) {
+                        laporanHtml += `<div style="font-size:12.5px;color:var(--text);margin-bottom:4px">${esc(t.hasil_laporan)}</div>`;
+                    } else {
+                        laporanHtml += `<div style="font-size:11.5px;color:#9ca3af;margin-bottom:4px">Belum ada laporan</div>`;
+                    }
+                    laporanHtml += fotosHtml;
+
+                    return `<tr>
+                        <td style="white-space:nowrap">${jadwalHtml}</td>
+                        <td style="text-align:center"><span class="badge b-purple" style="font-size:11px">Non-Rutin</span></td>
+                        <td><div style="line-height:1.45;font-size:13px;color:var(--text);font-weight:500;max-width:280px">${esc(t.deskripsi)}</div></td>
+                        <td style="font-size:12px;color:var(--muted)">${esc(t.assigner_nama) || '-'}</td>
+                        <td style="text-align:center"><span class="badge ${kgBadge[t.status] || 'b-gray'}">${kgLabel[t.status] || t.status}</span></td>
+                        <td>${laporanHtml}</td>
+                        <td class="actions-cell no-print" style="justify-content:center">${aksi}</td>
+                    </tr>`;
+                }).join('');
+
+                updateDOM('pelaksanaNonRutinBody', htmlNonRutin);
             }
-
-            let aksi = '';
-            if (isEditable) {
-                const tJson = esc(JSON.stringify(t));
-                aksi = `
-                    <button class="btn btn-outline btn-sm btn-icon" onclick='bukaModalTugasRutinSaya(${tJson})' title="Edit / Update Tugas"><i data-lucide="edit-3"></i></button>
-                    <button class="btn btn-danger btn-sm btn-icon" onclick="hapusKegiatan(${t.id})" title="Hapus Tugas"><i data-lucide="trash-2"></i></button>
-                `;
-            } else {
-                aksi = `<span class="badge b-gray" style="font-size:11px"><i data-lucide="lock" style="width:11px;height:11px;vertical-align:-1px"></i> Terkunci</span>`;
-            }
-
-            return `<tr>
-                <td style="white-space:nowrap">${jamHtml}</td>
-                <td style="text-align:center"><span class="badge b-teal" style="font-size:11px">Rutin</span></td>
-                <td><div style="line-height:1.45;font-size:13px;color:var(--text);font-weight:500;max-width:320px">${esc(t.deskripsi)}</div></td>
-                <td style="text-align:center">${fotosHtml}</td>
-                <td style="text-align:center"><span class="badge ${kgBadge[t.status] || 'b-gray'}">${kgLabel[t.status] || t.status}</span></td>
-                <td style="text-align:center">${statusHarianHtml}</td>
-                <td class="actions-cell no-print" style="justify-content:center">${aksi}</td>
-            </tr>`;
-        }).join('');
-
-        updateDOM('kegiatanBody', html);
+        }
         return;
     }
 
@@ -2473,6 +2602,13 @@ async function simpanUpdateKegiatan() {
 }
 
 async function hapusKegiatan(id) {
+    if (IS_PELAKSANA_ONLY) {
+        const task = (typeof dataKegiatanList !== 'undefined') ? dataKegiatanList.find(t => Number(t.id) === Number(id)) : null;
+        if (task && task.jenis !== 'rutin') {
+            toast('Karyawan pelaksana hanya dapat menghapus tugas rutin mandiri miliknya.', 'error');
+            return;
+        }
+    }
     if (!await customConfirm('Yakin ingin menghapus penugasan kegiatan ini?')) return;
     const r = await apiFetch('karyawan', 'hapus_kegiatan', { id });
     if (r.ok) {

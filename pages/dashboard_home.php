@@ -3,15 +3,21 @@ $modules = getRoleModules($role);
 $cards = [];
 
 if (in_array('inventaris', $modules)) {
-    $n = $conn->query("SELECT COUNT(*) n FROM peminjaman WHERE status IN ('diajukan','diverifikasi')")->fetch_assoc()['n'];
+    // Menghitung seluruh pengajuan peminjaman dalam alur berjenjang yang masih menunggu proses:
+    // menunggu_approval_atasan -> diajukan/disetujui_atasan -> diverifikasi
+    $n = $conn->query("SELECT COUNT(*) n FROM peminjaman WHERE status IN ('menunggu_approval_atasan','diajukan','disetujui_atasan','diverifikasi')")->fetch_assoc()['n'];
     $cards[] = ['icon' => 'package', 'color' => '#145c3f', 'label' => 'Pengajuan Peminjaman Menunggu', 'value' => $n, 'link' => 'inventory'];
 }
 if (in_array('maintenance', $modules)) {
-    $n = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE status NOT IN ('selesai','ditolak')")->fetch_assoc()['n'];
+    // Menghitung pengajuan maintenance yang sedang dalam proses, mengecualikan status terminal:
+    // selesai, ditolak (oleh verifikator/spv), dan ditolak_atasan (oleh atasan langsung)
+    $n = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE status NOT IN ('selesai','ditolak','ditolak_atasan')")->fetch_assoc()['n'];
     $cards[] = ['icon' => 'wrench', 'color' => '#a97c22', 'label' => 'Maintenance Dalam Proses', 'value' => $n, 'link' => 'maintenance'];
 }
 if (in_array('event', $modules)) {
-    $n = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('diajukan','diverifikasi','disetujui','berlangsung')")->fetch_assoc()['n'];
+    // Menghitung seluruh event aktif yang masih dalam alur persetujuan berjenjang maupun sedang berjalan:
+    // menunggu_approval_atasan -> diajukan/disetujui_atasan -> diverifikasi -> disetujui -> berlangsung
+    $n = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('menunggu_approval_atasan','diajukan','disetujui_atasan','diverifikasi','disetujui','berlangsung')")->fetch_assoc()['n'];
     $cards[] = ['icon' => 'calendar', 'color' => '#2f6690', 'label' => 'Event Aktif', 'value' => $n, 'link' => 'event'];
 }
 if (in_array('karyawan', $modules)) {
@@ -25,7 +31,8 @@ if (in_array('karyawan', $modules)) {
     }
 }
 if (in_array('arsip', $modules)) {
-    $n = $conn->query("SELECT COUNT(*) n FROM arsip")->fetch_assoc()['n'];
+    $visWhere = visibleWhere($role, $user['id']);
+    $n = $conn->query("SELECT COUNT(*) n FROM arsip WHERE $visWhere")->fetch_assoc()['n'];
     $cards[] = ['icon' => 'archive', 'color' => '#1f7a6c', 'label' => 'Total Dokumen Arsip', 'value' => $n, 'link' => 'arsip'];
 }
 

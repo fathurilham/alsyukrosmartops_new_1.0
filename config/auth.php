@@ -28,6 +28,28 @@ function getSessionIdleSeconds() {
     return SESSION_IDLE_SECONDS;
 }
 
+/** Pastikan tabel user_sessions tersedia di database (self-healing idempotent). */
+function ensureUserSessionsTable() {
+    global $conn;
+    static $ensured = false;
+    if ($ensured || !$conn) return;
+    try {
+        $conn->query("CREATE TABLE IF NOT EXISTS `user_sessions` (
+          `user_id` int(11) NOT NULL,
+          `session_id` varchar(128) NOT NULL,
+          `ip` varchar(45) NOT NULL DEFAULT '',
+          `user_agent` varchar(255) NOT NULL DEFAULT '',
+          `login_at` datetime NOT NULL DEFAULT current_timestamp(),
+          `last_activity` datetime NOT NULL DEFAULT current_timestamp(),
+          PRIMARY KEY (`user_id`),
+          KEY `idx_session_id` (`session_id`),
+          KEY `idx_last_activity` (`last_activity`),
+          CONSTRAINT `fk_user_sessions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $ensured = true;
+    } catch (Throwable $e) {}
+}
+
 /** Deteksi apakah request saat ini menuju endpoint API (`api/`). */
 function isApiRequest() {
     $uri = $_SERVER['REQUEST_URI'] ?? '';
@@ -46,7 +68,7 @@ function clearAuthSessionState($destroyFullSession = true) {
 }
 
 /** Hentikan request dengan respons 401 JSON (untuk API) atau redirect ke halaman login. */
-function terminateInvalidSession($msg = 'Sesi tidak valid atau telah berakhir. Silakan login kembali.') {
+function terminateInvalidSession($msg = 'Sesi tidak valid atau telah berakhir. Silakan login kembali.', $reason = null) {
     clearAuthSessionState(true);
     if (isApiRequest()) {
         http_response_code(401);
@@ -54,7 +76,8 @@ function terminateInvalidSession($msg = 'Sesi tidak valid atau telah berakhir. S
         echo json_encode(['ok' => false, 'msg' => $msg]);
         exit();
     } else {
-        header('Location: index.php');
+        $param = ($reason === 'kicked') ? '?kicked=1' : '';
+        header('Location: index.php' . $param);
         exit();
     }
 }
@@ -64,6 +87,7 @@ function removeUserSession($userId, $sessionId = null) {
     global $conn;
     $userId = (int)$userId;
     if ($userId <= 0 || !$conn) return false;
+    ensureUserSessionsTable();
     try {
         if ($sessionId !== null && $sessionId !== '') {
             $stmt = $conn->prepare("DELETE FROM user_sessions WHERE user_id = ? AND session_id = ?");
@@ -83,9 +107,12 @@ function removeUserSession($userId, $sessionId = null) {
 
 /**
  * Klaim sesi aktif untuk user saat login (Satu Akun = Satu Sesi Aktif).
- * Menggunakan transaksi + SELECT ... FOR UPDATE pada baris user & user_sessions
- * untuk mencegah balapan data (race condition) saat terjadi dua login bersamaan.
- * Mengembalikan true jika berhasil klaim sesi, atau false jika masih ada sesi aktif lain.
+ * Login baru yang valid akan mengambil alih sesi aktif dan menggantikan sesi lama,
+ * sehingga user tidak terkunci jika sebelumnya menutup browser tanpa logout.
+ * Sesi lama pada perangkat/browser lain otomatis diakhiri pada aktivitas berikutnya.
+ *
+ * Fungsi ini selalu return true selama autentikasi user valid — kegagalan pencatatan
+ * sesi di DB (misalnya saat tabel belum siap) tidak memblokir proses login.
  */
 function claimUserSession($userId, $sessionId, $ip = null, $userAgent = null) {
     global $conn;
@@ -93,16 +120,23 @@ function claimUserSession($userId, $sessionId, $ip = null, $userAgent = null) {
     $sessionId = (string)$sessionId;
     if ($userId <= 0 || $sessionId === '') return false;
 
+    ensureUserSessionsTable();
+
     $now = time();
     $nowStr = date('Y-m-d H:i:s', $now);
     $idleSeconds = getSessionIdleSeconds();
     $ipAddr = $ip !== null ? (string)$ip : (function_exists('getClientIp') ? getClientIp() : ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'));
     $uaShort = mb_substr((string)($userAgent ?? ($_SERVER['HTTP_USER_AGENT'] ?? '')), 0, 255);
 
-    $conn->begin_transaction();
     try {
+        $conn->begin_transaction();
+
         // 1. Kunci baris user di tabel `users` agar dua percobaan login bersamaan pada akun yang sama mengantre
         $stmtLock = $conn->prepare("SELECT id FROM users WHERE id = ? FOR UPDATE");
+        if (!$stmtLock) {
+            $conn->rollback();
+            return true;
+        }
         $stmtLock->bind_param("i", $userId);
         $stmtLock->execute();
         $resLock = $stmtLock->get_result();
@@ -114,6 +148,10 @@ function claimUserSession($userId, $sessionId, $ip = null, $userAgent = null) {
 
         // 2. Cek apakah user sudah memiliki baris sesi di `user_sessions`
         $stmtSess = $conn->prepare("SELECT session_id, last_activity FROM user_sessions WHERE user_id = ? FOR UPDATE");
+        if (!$stmtSess) {
+            $conn->rollback();
+            return true;
+        }
         $stmtSess->bind_param("i", $userId);
         $stmtSess->execute();
         $existing = $stmtSess->get_result()->fetch_assoc();
@@ -121,29 +159,34 @@ function claimUserSession($userId, $sessionId, $ip = null, $userAgent = null) {
         if ($existing) {
             $lastActTs = strtotime($existing['last_activity'] ?? '');
             $isExpired = ($lastActTs === false) || (($now - $lastActTs) > $idleSeconds);
+            $isDifferentSession = !hash_equals((string)$existing['session_id'], $sessionId);
 
-            if (!$isExpired && !hash_equals((string)$existing['session_id'], $sessionId)) {
-                // Masih ada sesi aktif yang belum kedaluwarsa di perangkat/browser lain
-                $conn->rollback();
-                return false;
+            if (!$isExpired && $isDifferentSession) {
+                // Catat log aktivitas jika sesi aktif sebelumnya diambil alih dari perangkat/browser baru
+                logAktivitas($userId, 'auth', 'Sesi aktif dialihkan ke perangkat baru (' . $ipAddr . ')');
             }
 
-            // Sesi lama sudah kedaluwarsa (atau berasal dari session_id yang sama) -> gantikan
+            // Gantikan sesi lama dengan sesi baru (mengambil alih — 1 akun = 1 sesi aktif)
             $stmtUpd = $conn->prepare("UPDATE user_sessions SET session_id = ?, ip = ?, user_agent = ?, login_at = ?, last_activity = ? WHERE user_id = ?");
-            $stmtUpd->bind_param("sssssi", $sessionId, $ipAddr, $uaShort, $nowStr, $nowStr, $userId);
-            $stmtUpd->execute();
+            if ($stmtUpd) {
+                $stmtUpd->bind_param("sssssi", $sessionId, $ipAddr, $uaShort, $nowStr, $nowStr, $userId);
+                $stmtUpd->execute();
+            }
         } else {
             // Belum ada sesi aktif -> masukkan baris baru
             $stmtIns = $conn->prepare("INSERT INTO user_sessions (user_id, session_id, ip, user_agent, login_at, last_activity) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmtIns->bind_param("isssss", $userId, $sessionId, $ipAddr, $uaShort, $nowStr, $nowStr);
-            $stmtIns->execute();
+            if ($stmtIns) {
+                $stmtIns->bind_param("isssss", $userId, $sessionId, $ipAddr, $uaShort, $nowStr, $nowStr);
+                $stmtIns->execute();
+            }
         }
 
         $conn->commit();
         return true;
     } catch (Throwable $e) {
-        $conn->rollback();
-        return false;
+        // Jangan biarkan error DB mencegah login — rollback lalu izinkan masuk
+        try { $conn->rollback(); } catch (Throwable $_) {}
+        return true;
     }
 }
 
@@ -193,7 +236,7 @@ function validateAndTouchActiveSession($terminateOnInvalid = true, $touchActivit
     // Pastikan baris user_sessions ada dan session_id sama persis
     if (empty($row['session_id']) || !hash_equals((string)$row['session_id'], (string)$sid)) {
         if ($terminateOnInvalid) {
-            terminateInvalidSession('Sesi tidak valid atau telah berakhir.');
+            terminateInvalidSession('Sesi Anda telah berakhir karena akun digunakan di perangkat lain.', 'kicked');
         }
         clearAuthSessionState(false);
         return false;
@@ -250,6 +293,45 @@ function csrf_field() {
 if (!function_exists('esc')) {
     function esc($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 }
+if (!function_exists('periodeIndonesia')) {
+    /**
+     * Format tanggal / periode ke dalam Bahasa Indonesia.
+     * Contoh:
+     * - periodeIndonesia('F Y') => "November 2026"
+     * - periodeIndonesia('d F Y') => "15 November 2026"
+     * - periodeIndonesia('d M Y') => "15 Nov 2026"
+     */
+    function periodeIndonesia(string $format = 'F Y', ?int $timestamp = null): string {
+        $ts = $timestamp ?? time();
+        $bulanLengkap = [
+            1 => 'Januari', 2 => 'Februari', 3 => 'Maret', 4 => 'April',
+            5 => 'Mei', 6 => 'Juni', 7 => 'Juli', 8 => 'Agustus',
+            9 => 'September', 10 => 'Oktober', 11 => 'November', 12 => 'Desember'
+        ];
+        $bulanSingkat = [
+            1 => 'Jan', 2 => 'Feb', 3 => 'Mar', 4 => 'Apr',
+            5 => 'Mei', 6 => 'Jun', 7 => 'Jul', 8 => 'Agu',
+            9 => 'Sep', 10 => 'Okt', 11 => 'Nov', 12 => 'Des'
+        ];
+        $n = (int)date('n', $ts);
+        $escapedFull = addcslashes($bulanLengkap[$n], 'A..Za..z');
+        $escapedShort = addcslashes($bulanSingkat[$n], 'A..Za..z');
+
+        $fmt = '';
+        $len = strlen($format);
+        for ($i = 0; $i < $len; $i++) {
+            $c = $format[$i];
+            if ($c === 'F') {
+                $fmt .= $escapedFull;
+            } elseif ($c === 'M') {
+                $fmt .= $escapedShort;
+            } else {
+                $fmt .= $c;
+            }
+        }
+        return date($fmt, $ts);
+    }
+}
 function csrf_verify() {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') return;
     $sent = $_POST['csrf_token'] ?? ($_SERVER['HTTP_X_CSRF_TOKEN'] ?? '');
@@ -276,16 +358,15 @@ function getClientIp() {
 function checkIpRateLimit() {
     global $conn;
     $ip = getClientIp();
-    $timeLimit = date('Y-m-d H:i:s', time() - 15 * 60);
-    // Cleanup old attempts occasionally
+    // Cleanup old attempts occasionally directly in SQL
     if (rand(1, 100) === 1) {
-        $conn->query("DELETE FROM login_attempts WHERE created_at < '$timeLimit'");
+        $conn->query("DELETE FROM login_attempts WHERE created_at < (NOW() - INTERVAL 15 MINUTE)");
     }
     
     try {
-        $stmt = $conn->prepare("SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND created_at >= ?");
+        $stmt = $conn->prepare("SELECT COUNT(*) as count FROM login_attempts WHERE ip = ? AND created_at >= (NOW() - INTERVAL 15 MINUTE)");
         if (!$stmt) return false;
-        $stmt->bind_param("ss", $ip, $timeLimit);
+        $stmt->bind_param("s", $ip);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         return ($row['count'] ?? 0) >= 10;
@@ -318,9 +399,9 @@ function registerFailedLogin($userId) {
     $row = $stmt->get_result()->fetch_assoc();
     $attempts = (int)($row['failed_attempts'] ?? 0) + 1;
     if ($attempts >= LOGIN_MAX_ATTEMPTS) {
-        $lockedUntil = date('Y-m-d H:i:s', time() + LOGIN_LOCKOUT_MINUTES * 60);
-        $stmt = $conn->prepare("UPDATE users SET failed_attempts=?, locked_until=? WHERE id=?");
-        $stmt->bind_param("isi", $attempts, $lockedUntil, $userId);
+        $lockMinutes = LOGIN_LOCKOUT_MINUTES;
+        $stmt = $conn->prepare("UPDATE users SET failed_attempts=?, locked_until = (NOW() + INTERVAL ? MINUTE) WHERE id=?");
+        $stmt->bind_param("iii", $attempts, $lockMinutes, $userId);
         $stmt->execute();
         removeUserSession($userId);
     } else {

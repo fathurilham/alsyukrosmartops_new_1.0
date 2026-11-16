@@ -9,7 +9,7 @@ $canApprovePengganti = hasAccess($role, 'event', 'approve_pengganti');
 $canKelola = hasAccess($role, 'event', 'kelola');
 $canMonitoring = hasAccess($role, 'event', 'monitoring');
 $totalBerjalan = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('disetujui','berlangsung')")->fetch_assoc()['n'];
-$totalMenunggu = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('diajukan','diverifikasi')")->fetch_assoc()['n'];
+$totalMenunggu = $conn->query("SELECT COUNT(*) n FROM event WHERE status IN ('menunggu_approval_atasan','diajukan','disetujui_atasan','diverifikasi')")->fetch_assoc()['n'];
 ?>
 <div class="stat-grid">
     <div class="stat-card"><div class="stat-icon" style="background:#c79a3f"><i data-lucide="calendar-clock"></i></div><h3><?= $totalMenunggu ?></h3><p>Menunggu Persetujuan</p></div>

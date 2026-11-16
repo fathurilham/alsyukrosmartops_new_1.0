@@ -2,11 +2,12 @@
 $canTambah = hasAccess($role, 'arsip', 'tambah');
 $canKelola = hasAccess($role, 'arsip', 'kelola');
 $kategoriList = $conn->query("SELECT * FROM kategori_arsip ORDER BY nama_kategori")->fetch_all(MYSQLI_ASSOC);
-$totalDok = $conn->query("SELECT COUNT(*) n FROM arsip")->fetch_assoc()['n'];
+$visWhere = visibleWhere($role, $user['id']);
+$totalDok = $conn->query("SELECT COUNT(*) n FROM arsip WHERE $visWhere")->fetch_assoc()['n'];
 $totalBackup = $conn->query("SELECT COUNT(*) n FROM backup_arsip")->fetch_assoc()['n'];
 ?>
 <div class="stat-grid">
-    <div class="stat-card"><div class="stat-icon" style="background:#145c3f"><i data-lucide="file-text"></i></div><h3><?= $totalDok ?></h3><p>Total Dokumen</p></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#145c3f"><i data-lucide="file-text"></i></div><h3 id="statTotalDok"><?= $totalDok ?></h3><p>Total Dokumen</p></div>
     <div class="stat-card"><div class="stat-icon" style="background:#6a4fa0"><i data-lucide="folder-tree"></i></div><h3><?= count($kategoriList) ?></h3><p>Kategori Arsip</p></div>
     <?php if ($canKelola): ?><div class="stat-card"><div class="stat-icon" style="background:#2f6690"><i data-lucide="database-backup"></i></div><h3><?= $totalBackup ?></h3><p>Riwayat Backup</p></div><?php endif; ?>
 </div>
@@ -80,6 +81,8 @@ const aksesBadge = { umum: 'b-green', terbatas: 'b-yellow', rahasia: 'b-red' };
 async function loadArsip() {
     const r = await apiFetch('arsip', 'list', {}, 'GET');
     if (!r.ok) return;
+    const statEl = document.getElementById('statTotalDok');
+    if (statEl && Array.isArray(r.data)) statEl.textContent = r.data.length;
     if (document.getElementById('arsipBody')) updateDOM('arsipBody', r.data.length ? r.data.map(a => `<tr><td><a href="download.php?id=${a.id}" target="_blank" style="text-decoration:none; color:var(--primary); font-weight:600;"><i data-lucide="download" style="width:16px;height:16px;margin-right:4px;"></i>${esc(a.judul_dokumen)}</a></td><td>${esc(a.nama_kategori)||'-'}</td>
         <td><span class="badge ${aksesBadge[a.tingkat_akses]}">${esc(a.tingkat_akses)}</span></td><td>${esc(a.uploader_nama)}</td><td>${a.tanggal_unggah}</td>
         ${A_KELOLA ? `<td class="actions-cell no-print"><button class="btn btn-outline btn-sm" onclick="backupArsip(${a.id})"><i data-lucide="database-backup"></i> Backup</button></td>` : ''}

@@ -1,0 +1,11 @@
+# Temporary and OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# Backups (ignore generated backup archives, preserve structure)
+backups/*.zip
+backups/*.sql
+backups/*.tar.gz
+!backups/.htaccess

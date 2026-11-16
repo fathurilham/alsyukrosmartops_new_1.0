@@ -9,7 +9,7 @@ $canApprovePengganti = hasAccess($role, 'maintenance', 'approve_pengganti');
 $canKelola = hasAccess($role, 'maintenance', 'kelola');
 $canMonitoring = hasAccess($role, 'maintenance', 'monitoring');
 $totalPengajuan = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance")->fetch_assoc()['n'];
-$totalOpen = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE status NOT IN ('selesai','ditolak')")->fetch_assoc()['n'];
+$totalOpen = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE status NOT IN ('selesai','ditolak','ditolak_atasan')")->fetch_assoc()['n'];
 $totalSelesai = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE status='selesai'")->fetch_assoc()['n'];
 ?>
 <div class="stat-grid">
@@ -20,7 +20,7 @@ $totalSelesai = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE
 
 <div class="card">
     <div class="card-head">
-        <div><h2>Pengajuan Maintenance Fasilitas</h2><p>Alur: Pengajuan → Verifikasi (Team Leader) → Approval (SPV Sapras) → Pelaksanaan (Engineering).</p></div>
+        <div><h2>Pengajuan Maintenance Fasilitas</h2><p>Alur: Pengajuan → Persetujuan Atasan Unit → Verifikasi (Team Leader) → Approval (SPV Sapras) → Pelaksanaan (Engineering).</p></div>
         <div class="hgroup">
             <div id="toolbarMaintenance"></div>
             <?php if ($canAjukan): ?>
@@ -71,6 +71,14 @@ $totalSelesai = $conn->query("SELECT COUNT(*) n FROM pengajuan_maintenance WHERE
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Fasilitas Terkait (Opsional) -->
+            <div class="fld">
+                <label>Fasilitas Terkait <span style="font-size:11px;color:var(--muted)">(Opsional)</span></label>
+                <select id="mFasilitas">
+                    <option value="">-- Pilih Fasilitas (Opsional) --</option>
+                </select>
             </div>
 
             <!-- Deskripsi Kerusakan atau Kendala -->
@@ -218,6 +226,20 @@ function hapusMaintFoto() {
 function resetFormAjukan() {
     hapusMaintFoto();
     document.getElementById('mDeskripsi').value = '';
+    const sel = document.getElementById('mFasilitas');
+    if (sel) sel.value = '';
+}
+
+async function loadFasilitasDropdown() {
+    const sel = document.getElementById('mFasilitas');
+    if (!sel) return;
+    const r = await apiFetch('maintenance', 'list_fasilitas', {}, 'GET');
+    if (!r.ok || !Array.isArray(r.data)) return;
+    let opt = '<option value="">-- Pilih Fasilitas (Opsional) --</option>';
+    r.data.forEach(f => {
+        opt += `<option value="${f.id}">${esc(f.nama_fasilitas)}${f.lokasi ? ' (' + esc(f.lokasi) + ')' : ''}</option>`;
+    });
+    sel.innerHTML = opt;
 }
 
 function bukaModalAjukan() {
@@ -281,10 +303,16 @@ async function ajukanMaint() {
         if (window.lucide) lucide.createIcons({ root: btn });
     }
 
-    const r = await apiFetch('maintenance', 'ajukan', {
+    const fasilitasId = document.getElementById('mFasilitas')?.value || '';
+    const payload = {
         deskripsi_kerusakan: deskripsi,
         foto: fotoFile
-    });
+    };
+    if (fasilitasId) {
+        payload.fasilitas_id = fasilitasId;
+    }
+
+    const r = await apiFetch('maintenance', 'ajukan', payload);
 
     if (btn) {
         btn.disabled = false;
@@ -567,6 +595,7 @@ async function simpanProses(selesai) {
 }
 
 loadMaint();
+loadFasilitasDropdown();
 setInterval(loadMaint, 10000); // Polling real-time data
 <?php if ($canKelola || $canVerifikasi || $canMonitoring): ?>
 renderExportToolbar('#toolbarMaintenance', 'tblMaintenance', 'maintenance_fasilitas', 'Pengajuan Maintenance Fasilitas');

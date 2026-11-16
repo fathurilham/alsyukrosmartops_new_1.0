@@ -13,7 +13,7 @@
     $barangList = $conn->query("SELECT * FROM barang ORDER BY kode_barang ASC")->fetch_all(MYSQLI_ASSOC);
     $stokTotal = array_sum(array_column($barangList, 'stok'));
     $pinjamAktif = $conn->query("SELECT COUNT(*) n FROM peminjaman WHERE status='disetujui'")->fetch_assoc()['n'];
-    $menunggu = $conn->query("SELECT COUNT(*) n FROM peminjaman WHERE status IN ('diajukan','diverifikasi')")->fetch_assoc()['n'];
+    $menunggu = $conn->query("SELECT COUNT(*) n FROM peminjaman WHERE status IN ('menunggu_approval_atasan','diajukan','disetujui_atasan','diverifikasi')")->fetch_assoc()['n'];
 
     $activeTab = $_GET['tab'] ?? 'barang';
     ?>
@@ -76,7 +76,7 @@
     <div class="tab-panel" id="panel-pinjam" <?= $activeTab === 'pinjam' ? '' : 'style="display:none"' ?>>
         <div class="card">
             <div class="card-head">
-                <div><h2>Pengajuan & Persetujuan Peminjaman</h2><p>Alur: Ajukan → Verifikasi (Staff Inventaris) → Approve (SPV Inventaris).</p></div>
+                <div><h2>Pengajuan & Persetujuan Peminjaman</h2><p>Alur: Pengajuan → Persetujuan Atasan Unit → Verifikasi (Staff Inventaris) → Approval (SPV Inventaris).</p></div>
                 <div class="hgroup">
                     <div id="toolbarPinjam"></div>
                     <?php if ($canAjukan): ?>

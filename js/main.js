@@ -50,8 +50,33 @@ function showModalError(modalId, msg) {
     errBox.style.display = 'block';
 }
 
-/** Notifikasi Toast melayang */
+/** Notifikasi Toast melayang (menggunakan SweetAlert2 jika ada, atau fallback DOM element) */
 function toast(msg, type = 'info') {
+    if (window.Swal) {
+        const iconMap = {
+            'success': 'success',
+            'error': 'error',
+            'warning': 'warning',
+            'info': 'info'
+        };
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3500,
+            timerProgressBar: true,
+            didOpen: (toastEl) => {
+                toastEl.addEventListener('mouseenter', Swal.stopTimer);
+                toastEl.addEventListener('mouseleave', Swal.resumeTimer);
+            }
+        });
+        Toast.fire({
+            icon: iconMap[type] || 'info',
+            titleText: String(msg ?? '')
+        });
+        return;
+    }
+
     let container = document.getElementById('toastContainer');
     if (!container) {
         container = document.createElement('div');

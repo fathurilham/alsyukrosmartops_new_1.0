@@ -40,9 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($found) {
                     session_regenerate_id(true);
                     $newSid = session_id();
+                    // claimUserSession selalu return true kecuali user tidak ditemukan di DB
                     if (!claimUserSession($found['id'], $newSid, getClientIp(), $_SERVER['HTTP_USER_AGENT'] ?? '')) {
-                        logAktivitas($found['id'], 'auth', 'Login ditolak: akun sedang aktif di perangkat lain');
-                        $error = 'Akun ini sedang digunakan di perangkat lain. Silakan logout dari perangkat tersebut atau tunggu hingga sesi berakhir.';
+                        $error = 'Akun tidak ditemukan. Silakan hubungi Administrator.';
                     } else {
                         resetFailedLogin($found['id']);
                         $_SESSION['user_id'] = $found['id'];
@@ -484,6 +484,9 @@ eye.addEventListener('click', () => togglePassword(pw.type === 'password'));
 
 <?php if ($error): ?>
 Swal.fire({ title: 'Terjadi Kesalahan!', text: <?= json_encode($error) ?>, icon: 'error', confirmButtonText: 'OK', confirmButtonColor: '#145c3f' });
+<?php endif; ?>
+<?php if (isset($_GET['kicked'])): ?>
+Swal.fire({ title: 'Sesi Berakhir', text: 'Akun Anda telah masuk di perangkat lain. Sesi pada perangkat ini telah diakhiri.', icon: 'info', confirmButtonText: 'OK', confirmButtonColor: '#145c3f' });
 <?php endif; ?>
 <?php if (isset($_GET['registered'])): ?>
 Swal.fire({ title: 'Berhasil!', text: 'Registrasi berhasil! Silakan login.', icon: 'success', confirmButtonText: 'OK', confirmButtonColor: '#145c3f' });

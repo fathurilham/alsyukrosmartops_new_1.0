@@ -131,7 +131,12 @@ switch ($action) {
             $idsStr = !empty($accessibleIds) ? implode(',', array_map('intval', $accessibleIds)) : '0';
             $atasanList = $conn->query("SELECT k.id, k.nip, k.nama, k.jabatan FROM karyawan k WHERE k.status='aktif' AND k.id IN ($idsStr) AND ($pimFilterK) ORDER BY k.nama ASC")->fetch_all(MYSQLI_ASSOC);
         }
-        $users = $conn->query("SELECT id, username, name FROM users WHERE status='aktif' ORDER BY name ASC")->fetch_all(MYSQLI_ASSOC);
+        // Hanya kembalikan akun pengguna aktif yang belum tertaut ke data karyawan mana pun
+        $users = $conn->query("SELECT u.id, u.username, u.name 
+                               FROM users u 
+                               WHERE u.status = 'aktif' 
+                                 AND NOT EXISTS (SELECT 1 FROM karyawan k WHERE k.user_id = u.id) 
+                               ORDER BY u.name ASC")->fetch_all(MYSQLI_ASSOC);
         $jabatanList = $conn->query("SELECT DISTINCT k.jabatan FROM karyawan k WHERE k.jabatan IS NOT NULL AND TRIM(k.jabatan) != '' AND ($pimFilterK) ORDER BY k.jabatan ASC")->fetch_all(MYSQLI_ASSOC);
 
         // Karyawan pelaksana yang dapat diberikan tugas (hanya CSO atau Gardener; HRD tidak berwenang)
@@ -213,6 +218,17 @@ switch ($action) {
 
         if (!$nama || !$jabatan) {
             fail('Nama dan Jabatan wajib diisi.');
+        }
+
+        // Validasi akun pengguna (user_id): satu akun hanya boleh tertaut ke satu data karyawan
+        if ($user_id !== null) {
+            $stmtCekUser = $conn->prepare("SELECT id, nip, nama FROM karyawan WHERE user_id = ? LIMIT 1");
+            $stmtCekUser->bind_param("i", $user_id);
+            $stmtCekUser->execute();
+            $existingUser = $stmtCekUser->get_result()->fetch_assoc();
+            if ($existingUser) {
+                fail("Akun pengguna ini sudah tertaut dengan data karyawan {$existingUser['nama']} (NIP: {$existingUser['nip']}). Satu akun hanya boleh tertaut ke satu karyawan.");
+            }
         }
 
         // Validasi akses unit Pimpinan/Direksi
@@ -352,6 +368,17 @@ switch ($action) {
 
         if (!$nip || !$nama || !$jabatan) {
             fail('Data karyawan tidak lengkap.');
+        }
+
+        // Validasi akun pengguna (user_id): satu akun hanya boleh tertaut ke satu data karyawan
+        if ($user_id !== null && $user_id !== (int)($existing['user_id'] ?? 0)) {
+            $stmtCekUser = $conn->prepare("SELECT id, nip, nama FROM karyawan WHERE user_id = ? AND id != ? LIMIT 1");
+            $stmtCekUser->bind_param("ii", $user_id, $id);
+            $stmtCekUser->execute();
+            $existingUser = $stmtCekUser->get_result()->fetch_assoc();
+            if ($existingUser) {
+                fail("Akun pengguna ini sudah tertaut dengan data karyawan {$existingUser['nama']} (NIP: {$existingUser['nip']}). Satu akun hanya boleh tertaut ke satu karyawan.");
+            }
         }
 
         $postedDivisi = array_key_exists('divisi_id', $_POST)
@@ -855,8 +882,15 @@ switch ($action) {
             if (!$isPelaksana) {
                 forbidden('Akses ditolak. Anda tidak berwenang mengubah tugas karyawan lain.');
             }
-            if ($task['tanggal'] !== date('Y-m-d')) {
-                forbidden('Tugas rutin hanya dapat diperbarui pada tanggal hari ini.');
+            if ($task['jenis'] === 'rutin') {
+                if ($task['tanggal'] !== date('Y-m-d')) {
+                    forbidden('Tugas rutin hanya dapat diperbarui pada tanggal hari ini.');
+                }
+            } else {
+                // Non-rutin: Pelaksana hanya melaporkan hasil dan bukti foto, tidak berwenang mengubah rincian tugas
+                if (isset($_POST['deskripsi']) && trim($_POST['deskripsi']) !== '' && trim($_POST['deskripsi']) !== trim($task['deskripsi'])) {
+                    forbidden('Karyawan pelaksana tidak berwenang mengubah rincian tugas non-rutin.');
+                }
             }
         } elseif ($task['jenis'] === 'rutin') {
             forbidden('Tugas rutin dikelola sendiri oleh karyawan pelaksana bersangkutan.');
@@ -872,7 +906,7 @@ switch ($action) {
 
         $status = in_array($_POST['status'] ?? '', ['ditugaskan', 'dikerjakan', 'selesai']) ? $_POST['status'] : $task['status'];
         $hasil = isset($_POST['hasil_laporan']) ? trim($_POST['hasil_laporan']) : $task['hasil_laporan'];
-        $deskripsi = (!empty($_POST['deskripsi']) && $isPelaksana) ? trim($_POST['deskripsi']) : $task['deskripsi'];
+        $deskripsi = ($task['jenis'] === 'rutin' && !empty($_POST['deskripsi']) && $isPelaksana) ? trim($_POST['deskripsi']) : $task['deskripsi'];
         $selesaiPada = ($status === 'selesai') ? ($task['selesai_pada'] ?: date('Y-m-d H:i:s')) : null;
 
         // Penanganan hapus foto yang diminta
@@ -953,7 +987,7 @@ switch ($action) {
 
         // Jika status selesai, wajib minimal ada 1 foto (di kegiatan_foto atau foto_laporan)
         if ($status === 'selesai' && $currFotosCount < 1 && empty($task['foto_laporan'])) {
-            fail('Menandai tugas rutin selesai wajib melampirkan minimal 1 foto bukti.');
+            fail('Menandai tugas selesai wajib melampirkan minimal 1 foto bukti.');
         }
 
         $stmt = $conn->prepare("UPDATE kegiatan_karyawan SET deskripsi=?, status=?, hasil_laporan=?, selesai_pada=? WHERE id=?");
@@ -1206,7 +1240,7 @@ switch ($action) {
 
         $kegiatan_id = !empty($_POST['kegiatan_id']) ? (int)$_POST['kegiatan_id'] : null;
         $karyawan_id = (int)($_POST['karyawan_id'] ?? 0);
-        $periode = trim($_POST['periode'] ?? date('F Y'));
+        $periode = trim($_POST['periode'] ?? periodeIndonesia('F Y'));
         $catatan = trim($_POST['catatan'] ?? '');
 
         // Validasi skor nilai: wajib bilangan bulat 1-5

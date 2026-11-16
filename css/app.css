@@ -186,12 +186,13 @@ table.dtable th:last-child{border-top-right-radius:.5rem}
 .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--border)}
 
 /* ── 9. Toast ── */
-#toastContainer{position:fixed;top:20px;right:20px;z-index:1080;display:flex;flex-direction:column;gap:10px}
-.app-toast{background:var(--card);border-radius:var(--bs-border-radius);padding:13px 16px;box-shadow:var(--shadow-md);display:flex;align-items:center;gap:10px;min-width:280px;max-width:360px;cursor:pointer;font-size:13px;font-weight:500;border-left:4px solid var(--info);opacity:1}
-.app-toast-info{border-left-color:var(--info)}
-.app-toast-success{border-left-color:var(--primary)}
-.app-toast-error{border-left-color:var(--danger)}
-.app-toast-warning{border-left-color:var(--warning)}
+#toastContainer{position:fixed !important;top:20px !important;right:20px !important;z-index:999999 !important;display:flex !important;flex-direction:column !important;gap:10px !important;pointer-events:none !important}
+.app-toast{background:#ffffff !important;color:#1c2a22 !important;border-radius:8px !important;padding:12px 18px !important;box-shadow:0 10px 25px rgba(0,0,0,0.18),0 2px 6px rgba(0,0,0,0.08) !important;display:flex !important;align-items:center !important;gap:12px !important;min-width:280px !important;max-width:400px !important;cursor:pointer !important;font-size:13.5px !important;font-weight:500 !important;line-height:1.4 !important;border:1px solid #e6e1d3 !important;border-left:5px solid var(--info) !important;opacity:1 !important;visibility:visible !important;pointer-events:auto !important;animation:toastSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important}
+@keyframes toastSlideIn{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:translateX(0)}}
+.app-toast-info{border-left-color:#0284c7 !important}
+.app-toast-success{border-left-color:#145c3f !important}
+.app-toast-error{border-left-color:#dc2626 !important}
+.app-toast-warning{border-left-color:#d97706 !important}
 
 /* ── 10. Empty state, search bar, hierarchy tree ── */
 .empty-state{text-align:center;padding:60px 20px;color:var(--muted)}

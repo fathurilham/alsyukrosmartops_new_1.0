@@ -891,6 +891,28 @@ SELECT `id`, 'maintenance', 'approve_akhir_pengganti' FROM `roles` WHERE `kode` 
 INSERT IGNORE INTO `hak_akses` (`role_id`, `modul`, `aksi`)
 SELECT `id`, 'event', 'approve_akhir_pengganti' FROM `roles` WHERE `kode` = 'manajer_markom';
 
+-- ═══════════════════════════════════════════════════════════════════
+-- S. INDEKS UNIK PADA KARYAWAN.USER_ID (SATU AKUN SATU KARYAWAN, IDEMPOTENT)
+-- ═══════════════════════════════════════════════════════════════════
+
+-- 1. Tambah UNIQUE KEY pada kolom user_id di tabel karyawan jika belum ada
+SET @has_uq_karyawan_user_id = (
+    SELECT COUNT(*) 
+    FROM information_schema.STATISTICS 
+    WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'karyawan' 
+      AND INDEX_NAME = 'uq_karyawan_user_id'
+);
+
+SET @sql_add_uq_karyawan_user_id = IF(
+    @has_uq_karyawan_user_id = 0,
+    'ALTER TABLE `karyawan` ADD UNIQUE KEY `uq_karyawan_user_id` (`user_id`)',
+    'SELECT 1'
+);
+PREPARE stmt_uq FROM @sql_add_uq_karyawan_user_id;
+EXECUTE stmt_uq;
+DEALLOCATE PREPARE stmt_uq;
+
 
 
 
